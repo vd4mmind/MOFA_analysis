@@ -1,0 +1,21 @@
+# Function to get covariates
+# inputs:
+# file: location of patmeta object
+# pat2include: patients ids to include
+# cov2include: covariates to be included
+# outdir, directory to save output to
+
+
+getCovariates<-function(file, pat2include, cov2include, outdir){
+  #Load object
+  nameObj <- load(file)
+  meta <- get(nameObj)
+ 
+  #subset
+  meta <- meta[pat2include,cov2include, drop=F]
+  
+  #Save
+  save(meta, file=file.path(outdir,"covariates.RData"))
+
+  return(meta)
+  }
