@@ -1,0 +1,372 @@
+---
+title: "Characterisation of factor 7"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+library(MOFAtools)
+library(data.table)
+library(purrr)
+library(ggplot2)
+source("/Users/ricard/CLL/biology/utils.R")
+```
+
+
+<!-- # Load fitted model -->
+```{r}
+model <- loadModel(file = "/Users/ricard/data/CLL/out/test_final/4Jul/model7.hdf5", sortFactors=T)
+model <- loadModel(file = "/Users/ricard/data/CLL/out/test_final/17Aug/model15.hdf5", sortFactors=T)
+```
+
+<!-- Detect passenger samples -->
+```{r}
+# model <- detectPassengers(model, views="all", factors="all", r2_threshold=0.03)
+```
+
+```{r}
+calculateVarianceExplained(model)
+```
+
+<!-- Define interesting factors -->
+```{r}
+ighv_factor <- "1"
+new_factor <- "7"
+```
+
+<!-- Replace ensembl IDs by gene symbols -->
+```{r}
+tmp <- read.csv("/Users/ricard/data/ensembl/human/v87/BioMart/mRNA/Hsapiens_genes_BioMart.87.txt", header=T, sep="\t", stringsAsFactors=F)
+gene_meta <- tmp$symbol; names(gene_meta) <- tmp$ens_id
+featureNames(model)[["mRNA"]] <- stringr::str_replace_all(featureNames(model)[["mRNA"]], gene_meta)
+```
+
+<!-- Load patient survival metadata -->
+```{r load_patient_meta, echo=FALSE}
+load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
+patmeta <- patmeta[sampleNames(model),] %>% tibble::rownames_to_column("sample") %>% as.data.table
+survivalDataTTT <- patmeta[,c("sample","IGHV","T5","treatedAfter")] %>% .[,IGHV:=as.factor(IGHV)]
+survivalDataOS <-  patmeta[,c("sample","IGHV","T6","died")] %>% .[,IGHV:=as.factor(IGHV)]
+colnames(survivalDataOS) <- colnames(survivalDataTTT) <- c("sample","IGHV","time", "status")
+```
+
+<!-- Extract relevant latent variables -->
+```{r}
+Z <- getFactors(model)
+df = data.table(sample = MOFAtools::sampleNames(model),
+                x = Z[,new_factor], 
+                y = Z[,ighv_factor],
+                # cluster = cut(Z[,new_factor], breaks=c(-Inf,-0.5,0.5,Inf), labels=c("1","2","3"))
+                # cluster = cut(Z[,new_factor], breaks=c(-Inf,0,Inf), labels=c("1","2"))
+                cluster = as.factor(c("1","2")[kmeans(Z[,new_factor],2)$cluster])
+)
+
+df_all = data.table(sample = MOFAtools::sampleNames(model),
+                x = Z[,new_factor], 
+                y = Z[,ighv_factor],
+                # ighv = patmeta[,IGHV],
+                # cluster = cut(Z[,new_factor], breaks=c(-Inf,-0.5,0.5,Inf), labels=c("1","2","3"))
+                # cluster = cut(Z[,new_factor], breaks=c(-Inf,0,Inf), labels=c("1","2"))
+                cluster = as.factor(c("1","2")[kmeans(Z[,new_factor],2)$cluster])
+                ) %>%
+  merge(survivalDataTTT[,c("sample","time")],by="sample") %>%
+  merge(patmeta[,c("sample","IC50beforeTreatment")])
+df_all <- df_all[complete.cases(df_all),]
+```
+
+
+# Scatterplots of latent variables
+```{r}
+
+# p <- ggplot(df_all[complete.cases(df_all),], aes(x=x ,y=y, color=IC50beforeTreatment)) +
+#   geom_point(size=rel(2.0)) +
+#   # scale_colour_discrete(name = "IGHV status", labels=c("Unmutated", "Mutated")) +
+#   xlab("New factor") + ylab("IGHV factor") +
+#   theme_scatter()
+# print(p)
+
+
+#  p <- ggplot(df, aes(x=x ,y=y, color=cluster)) +
+#   geom_point(size=rel(2.0)) +
+#   # scale_colour_discrete(name = "IGHV status", labels=c("Unmutated", "Mutated")) +
+#   xlab("New factor") + ylab("IGHV factor") +
+#   # scale_shape_discrete(labels=c("Mutated","Unmutated")) +
+#   # scale_color_discrete(labels=c("Non-stressed","Stressed")) +
+#   # guides(shape=guide_legend(title="IGHV status"), color=guide_legend(title="Stress status")) +
+#   theme_scatter()
+# print(p)
+
+# pdf("/Users/ricard/CLL/ricard_analysis/out/stress/scatterplot.pdf", width = 6.5, height = 5, useDingbats = F)
+# print(p)
+# dev.off()
+
+ p <- ggplot(df_all, aes(x=x, fill=IC50beforeTreatment)) +
+  geom_density(alpha=0.5) +
+  labs(x="", y="Density") +
+  guides(fill=guide_legend(title="Pretreated")) +
+  theme_scatter()
+print(p)
+pdf("/Users/ricard/CLL/biology/out/pretreatment/density.pdf", width = 6.5, height = 5, useDingbats = F)
+print(p)
+dev.off()
+```
+
+<!-- mRNA view doesnt seem to be relevant -->
+```{r}
+showTopWeights(model, "mRNA", new_factor, nfeatures=10, abs=T)
+
+anno_row <- df[,c("sample","cluster")] %>% as.data.frame %>% tibble::column_to_rownames("sample")
+showDataHeatmap(model, view="mRNA", factor=new_factor, nfeatures=5, include_weights = F, abs=T,  cluster_cols=F     , main="", show_rownames=F, annotation_row=anno_row)
+
+```
+
+Hits on methylation:
+ANKRD11 is methylated in breast cancer
+CREBBP is methylated in leukemia
+SYNM promoter methylation is associated with loss of SYNM mRNA expression in human breast cancer specimens
+RASA3: tumor suppresor gene
+PRKCZ: prostate cancer
+ASPSCR1: renal carcinoma
+PAK1: upregualted in cancer
+```{r, width=1, height=3}
+
+# anno_row <- df[,c("sample","cluster")] %>% as.data.frame %>% tibble::column_to_rownames("sample")
+# tmp <- getTrainData(model, views="Mutations", features=list(c("TP53","NOTCH1","del17p13"))) %>% 
+#   melt(varnames=c("mutation","sample"), value.name="value") %>% as.data.table
+# anno_row_tmp <- merge(anno_row,tmp, by="sample")
+
+
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg27150870")] <- "cg27150870 (ANKRD11)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg10057528")] <- "cg10057528 (PRKC-Z)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg00981070")] <- "cg00981070 (PRKC-Z)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg04071758")] <- "cg04071758 (CREBBP)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg04336433")] <- "cg04336433 (CREBBP)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg14703784")] <- "cg14703784 (RASA3)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg15032490")] <- "cg15032490 (PAK1)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg22245494")] <- "cg22245494 (SYNM)"
+# featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg05277504")] <- "cg05277504 (ASPSCR1)"
+# gene_associated_features <- c("cg27150870 (ANKRD11)","cg10057528 (PRKC-Z)","cg00981070 (PRKC-Z)","cg04071758 (CREBBP)","cg04336433 (CREBBP)","cg14703784 (RASA3)","cg15032490 (PAK1)","cg22245494 (SYNM)","cg05277504 (ASPSCR1)")
+
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg27150870")] <- "ANKRD11"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg00981070")] <- "PRKC-Z (1)"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg10057528")] <- "PRKC-Z (2)"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg09179248")] <- "PRKC-Z (3)"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg04071758")] <- "CREBBP (1)"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg04336433")] <- "CREBBP (2)"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg14703784")] <- "RASA3"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg15032490")] <- "PAK1"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg22245494")] <- "SYNM"
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg05277504")] <- "ASPSCR1"
+
+featureNames(model)[["Methylation"]][which(featureNames(model)[["Methylation"]]=="cg18440230")] <- "ERGIC1"
+
+
+gene_associated_features <- c("PRKC-Z (1)","PRKC-Z (2)","PRKC-Z (3)","CREBBP (1)","CREBBP (2)","RASA3","PAK1","SYNM","ASPSCR1","ERGIC1")
+
+showDataHeatmap(model, view="Methylation", factor=new_factor, nfeatures=23, include_weights = F, cluster_cols=F, main="", show_rownames=F, annotation_row=NULL)
+# pdf("/Users/ricard/CLL/biology/out/pretreatment/methylation_heatmap.pdf", width=5, height=5)
+showDataHeatmap(model, view="Methylation", factor=new_factor, nfeatures=0, manual_features=gene_associated_features, cluster_cols=T, main="", show_rownames=F, treeheight_col=0)
+# dev.off()
+```
+
+<!-- <!-- Characterisation of methylation hits --> -->
+<!-- ```{r} -->
+<!-- # library(SummarizedExperiment) -->
+
+<!-- load("/Users/ricard/data/CLL/pace/data/meth.RData") -->
+
+<!-- W <- head( sort( abs( getWeights(model, views="Methylation", factors=new_factor, as.data.frame = F)[,1]), decreasing = T), n=25) -->
+<!-- meth_filt <- meth[names(W),] -->
+
+<!-- tmp <- data.frame(SummarizedExperiment::rowRanges(meth_filt)[,c("UCSC_RefGene_Name")]) -->
+<!-- rownames(tmp) <- rownames(meth_filt) -->
+
+
+<!-- ``` -->
+
+
+
+```{r}
+# showAllWeights(model, view="Mutations", factor=new_factor, threshold = 0.22)
+pdf("/Users/ricard/CLL/biology/out/pretreatment/mutations.pdf", width = 5, height = 6, useDingbats = F)
+showTopWeights(model, "Mutations", new_factor, nfeatures=11, abs=T)
+dev.off()
+# showWeightHeatmap(model, "Mutations", factors=c(new_factor,6))
+# showDataHeatmap(model, view="Mutations", factor=new_factor, nfeatures=5, include_weights=F, abs=T, cluster_cols=F, main="", show_rownames=F)
+```
+
+# Drug response curves
+```{r}
+# data(drugs, package="pace")
+load("/Users/ricard/data/CLL/pace/data/drugs.RData")
+
+drugData <- getViab(
+  file = "/Users/ricard/data/CLL/pace/data/lpdAll.RData",
+  pat2include = MOFAtools::sampleNames(model),
+  badDrugs=c("D_008","D_025"), 
+  conc2include = 1:5,
+  targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 
+  conc4targeted = 1:5,
+  chemoDrugs = c("D_006", "D_159", "D_010"),
+  conc4chemo = 1:5,
+  effectNum = 4,
+  effectVal = 0.7,
+  viab = 0.6, 
+  maxval = 1.1,
+  outdir = "/tmp"
+)
+
+
+# Remove ranges
+drugData <- drugData[,!stringr::str_detect(colnames(drugData),":")]
+
+# Extract weights
+drugWeights <- getExpectations(model,"SW","E")[["Drugs"]]
+rownames(drugWeights) <- paste(drugs[substr(rownames(drugWeights),1,5),"name"], substr(rownames(drugWeights),6,8), sep="")
+foo <- reshape2::melt(drugWeights, varnames=c("drugconc", "factor"), value.name="weight") %>% as.data.table
+
+# Extract data
+colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
+bar <- reshape2::melt(drugData, varnames=c("sample", "drugconc"), value.name="viab") %>% as.data.table 
+
+# Join
+foobar <- merge(foo,bar, by="drugconc", allow.cartesian=TRUE) %>% 
+  .[,drugconc:=as.character(drugconc)] %>%
+  .[,drug:=sapply(strsplit(drugconc, "_"), function(l) l[1])] %>%
+  .[,conc:=sapply(strsplit(drugconc, "_"), function(l) l[2])] %>%
+  .[,category:=drugs$target_category[match(drug, drugs$name)]] %>%
+  .[,target:=drugs$main_targets[match(drug, drugs$name)]] %>%
+  .[,pathway:=drugs$pathway[match(drug, drugs$name)]] %>%
+  setkey(drug)
+
+# Remove missing cases
+foobar <- foobar[complete.cases(foobar),]
+
+# Remove uninteresting drugs
+# foobar <- foobar[!drug %in% c("everolimus","BAY 11-70","SGI-1776","sunitinib","chaetoglobosin A","chaetocin","vorinostat","TAE684","SGX-523","cephaeline","actinomycin D","tipifarnib","BIX02188")]
+
+# Remove uninteresting pathways 
+# foobar <- foobar[!category %in% c("mTOR","NFkB","PIM","Angiogenesis","Cytoskeleton","Epigenome","ALK","MET","Cell cycle control","HSP90","PI3K/AKT","JAK/STAT","Reactive oxygen species","EGFR","B-cell receptor")]
+# foobar$category <- factor(foobar$category, levels=unique(foobar$category))
+
+# Remove uninteresting factors
+foobar <- foobar[!factor %in% c("intercept")]
+
+# Sort by category
+setkey(foobar,category) %>% .[,drug:=factor(drug,levels=unique(drug))]
+```
+
+
+```{r dotplot_drugs, echo=FALSE}
+asd <- foobar[factor==new_factor,.(weight=mean(weight)),by=c("drug","category","target","pathway")] %>%
+  .[,weight:=abs(weight)] %>% setkey(weight) %>% tail(n=15) %>% .[,drug:=factor(drug,levels=drug)]
+  # .[,significant:=c("no","yes")[as.numeric(abs(weight)>0.1)+1]]
+asd[,color:=sample_colors(length(unique(category)))[as.numeric(category)]]
+
+p <- ggplot(asd, aes(x=drug, y=weight, color=category)) +
+  geom_point() +
+  # geom_segment(aes(xend=drug, yend=-max(asd$weight)-0.01, color=significant)) +
+  geom_segment(aes(xend=drug, yend=0)) +
+  xlab("") + ylab("Loading") +
+  # scale_y_continuous(limits=c(-(max(abs(asd$weight))-0.01),max(abs(asd$weight)+0.01)) +
+  coord_flip() +
+  guides(color=guide_legend(title="Drug category")) +
+  theme(
+    axis.text.y = element_text(size = rel(1.4), color = "black"),
+    # axis.text.y = element_text(size = rel(1), color = "black"),
+    axis.text.x = element_text(size = rel(1.3), color = "black", angle=90, hjust=1, vjust=0.5),
+    axis.title.y = element_text(size = rel(1.4), margin = margin(0,15,0,0)),
+    axis.title.x = element_text(size = rel(1.4), margin = margin(15,0,0,0)),
+    axis.line = element_line(colour = "black"),
+    axis.ticks = element_line(colour = "black"),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    legend.key = element_rect(fill = "white"),
+    # legend.title = element_rect(fill = "white"),
+    legend.position = "right"
+  )
+print(p)
+
+# pdf("/Users/ricard/CLL/biology/out/pretreatment/drug_weights.pdf", width = 6.5, height = 5, useDingbats = F)
+# print(p)
+# dev.off()
+```
+
+
+
+
+
+```{r}
+
+interesting_drugs <- c("rotenone")
+
+
+drugData <- getViab(
+  file = "/Users/ricard/data/CLL/pace/data/lpdAll.RData",
+  pat2include = MOFAtools::sampleNames(model),
+  badDrugs=c("D_008","D_025"), 
+  conc2include = 1:5,
+  targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 
+  conc4targeted = 1:5,
+  chemoDrugs = c("D_006", "D_159", "D_010"),
+  conc4chemo = 1:5,
+  effectNum = 4,
+  effectVal = 0.7,
+  viab = 0.6, 
+  maxval = 1.1,
+  outdir = "/tmp"
+)
+drugData <- drugData[,!stringr::str_detect(colnames(drugData),":")]
+colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
+tmp <- reshape2::melt(drugData, varnames=c("sample", "drugconc"), value.name="viab") %>% as.data.table %>%
+  .[,drugconc:=as.character(drugconc)] %>%
+  .[,drug:=sapply(strsplit(drugconc, "_"), function(l) l[1])] %>%
+  .[,conc:=sapply(strsplit(drugconc, "_"), function(l) l[2])] %>%
+  .[,drugconc:=NULL] %>%
+  .[drug%in%interesting_drugs] %>% 
+  merge(df[,c("sample","cluster")], by="sample")
+
+f <- function(x) { return(data.frame(y=mean(x), ymin=mean(x)-sd(x), ymax=mean(x)+sd(x))) }
+p <- ggplot(tmp, aes(x=conc, y=viab)) +
+  # geom_boxplot(aes(fill=cluster), outlier.shape=NA) +
+  # stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y=median, geom="line", size=1)  +
+  stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data=f, geom="errorbar", alpha=0.5, width=0.4)  +
+  stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y="mean", geom="line", size=1)  +
+  # geom_boxplot(aes(fill=cluster), outlier.shape=NA) +
+  xlab("Concentration") + ylab("Cellular viability") +
+  facet_wrap(~drug) +
+  theme(
+    plot.title = element_text(size=rel(2.0), hjust=0.5),
+    axis.text = element_text(size = rel(1), color = "black"),
+    # axis.title = element_text(size = titlesize),
+    axis.title.y = element_text(size = rel(1.3), margin = margin(0, 15, 0, 0)),
+    axis.title.x = element_text(size = rel(1.3), margin = margin(15, 0, 0, 0)),
+    axis.line = element_line(colour = "black", size = 0.5),
+    axis.ticks = element_line(colour = "black", size = 0.5),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    legend.key = element_rect(fill = "white"),
+    legend.position = "none",
+    strip.text = element_text(size=rel(1.5)),
+    # legend.direction = "horizontal",
+    legend.text = element_text(size = rel(1.2)),
+    legend.title = element_text(size = rel(1.5))
+  )
+print(p)
+
+pdf("/Users/ricard/CLL/biology/out/pretreatment/drug_curves.pdf", width = 5, height = 4, useDingbats = F)
+print(p)
+dev.off()
+```
+
+<!-- T test on the drug responses -->
+```{r}
+tmp[,.(p=t.test(.SD[cluster=="1",viab], y=.SD[cluster=="2",viab])[["p.value"]]), by=c("drug","conc")]
+```
+
