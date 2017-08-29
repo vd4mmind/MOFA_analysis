@@ -186,13 +186,11 @@ scatterPlot(MOFAobject, factors = c("1", "2"), color_by = "IGHV", shape_by = "tr
 
 An overview of pair-wise sctterplots for all or a subset of factors is produced by the 'scatterPairs' function
 ```{r}
-# TO-DO covariates, warnings?
-scatterPairs(MOFAobject, factors = c("1", "2", "3", "4"))
+scatterPairs(MOFAobject, factors = c("1", "2", "3", "4"), color_by = "IGHV")
 ```
 
 A single factor can be visualised using the 'beeswarmPlot' function
 ```{r}
-# TO-DO covariates
 beeswarmPlot(MOFAobject, factors = "1", color_by = "IGHV")
 ```
 
