@@ -1,0 +1,128 @@
+---
+title: "Overview CLL data used for MOFA"
+author: "Britta Velten"
+date: "6/28/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+
+```{r}
+devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+data("CLL_views")
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_overview"
+names(CLL_views)[grepl("meth", names(CLL_views))] <- "Methylation"
+names(CLL_views)[grepl("mut", names(CLL_views))] <- "Mutations"
+names(CLL_views)[grepl("viab", names(CLL_views))] <- "Drug response"
+CLL_views <- CLL_views[!names(CLL_views)%in%c("lincRNA", "miRNA")]
+```
+
+# Check presence
+```{r}
+#does a apatient has at least one measurement in a given view?
+ovw <- sapply(CLL_views, function(dat) apply(dat,2,function(pat) !all(is.na(pat))))
+sum(apply(ovw[,colnames(ovw)!="covariates"],1,any))
+ovw <- ovw[apply(ovw[,colnames(ovw)!="covariates"],1,any),]
+# in the mutation views not only IGHV is measured
+# all(apply(!is.na(CLL_views$Mutations[,!rownames(CLL_views$Mutations)=="IGHV"]),2,any) == ovw[,"Mutations"])
+
+molten_ovw <- melt(ovw, varnames =c("PatID", "omic")) %>% filter(omic != "covariates")
+molten_ovw$omic <- factor(molten_ovw$omic, levels = rev(c("Mutations", "Methylation", "Drug response", "mRNA")))
+molten_ovw$PatID <- factor(molten_ovw$PatID, levels = rownames(ovw)[order(rowSums(ovw[,-1]), decreasing = T)])
+
+molten_ovw$combi <- ifelse(molten_ovw$value, as.character(molten_ovw$omic), "missing")
+molten_ovw$ntotal <- paste("n=", colSums(ovw)[as.character(molten_ovw$omic) ], sep="")
+molten_ovw$ptotal <- paste("d=", sapply(CLL_views, nrow)[as.character(molten_ovw$omic) ], sep="")
+
+```
+
+#Set colours
+```{r}
+myPalette <- c(RColorBrewer::brewer.pal(8,"Dark2"),RColorBrewer::brewer.pal(9,"Set1"))
+x<-rep(1,17); names(x)<-1:17
+barplot(x, col=myPalette)
+```
+
+```{r}
+RNAseq <- RColorBrewer::brewer.pal(3,"Greens")
+others <-myPalette[c(2,10,6)]
+names(RNAseq) <- c("lincRNA", "miRNA", "mRNA")
+names(others) <- c("Mutations", "Methylation", "Drug response")
+cols4omics <- c(RNAseq,others)
+```
+
+
+## Tile plot
+```{r}
+pdf(file.path(plotdir, "tile_cll.pdf"), width = 5, height = 5)
+
+molten_ovw %<>% mutate(omic_label = paste(omic, ptotal, sep="\n"))
+gg1 <- ggplot(molten_ovw, aes(x=PatID, y=omic_label, fill=combi, width=0.7, height=0.9), col="black")+geom_tile() +
+  scale_fill_manual(values = c('missing'="grey", cols4omics))+
+    guides(fill=F) +  xlab("Patients (n=207)") + 
+  theme(axis.text.x =element_blank(),
+        panel.background = element_rect(fill="white"),
+        text = element_text(size=16),
+        # plot.title = element_text(hjust = 5),
+        axis.ticks.y = element_blank(),
+        axis.ticks.x= element_blank(),
+        panel.grid = element_line(colour = "black"),
+        plot.margin = unit(c(5.5,2,5.5,5.5), "pt")) +
+  ylab("Omic type") +ggtitle("Samples available in the CLL study") +
+  geom_text(data=filter(molten_ovw, PatID=="H004"),aes(x=70,label=ntotal), size=6)
+
+gg1
+
+# # needs a proper way to align text to tile plot
+# gg2 <- ggplot(filter(molten_ovw, PatID=="H004"), aes(x=PatID, y=omic)) +
+#   geom_text(aes(label=ptotal, x=1), hjust = 0, size=6) +
+#   ggtitle("")+  ylab("") + xlab("")+
+#   theme(axis.text.x =element_blank(),
+#         panel.background = element_blank(),
+#         axis.line = element_blank(),
+#         text = element_text(size=16),
+#         axis.text = element_blank(),
+#         axis.ticks = element_blank(),
+#         plot.title = element_text(hjust = 0),
+#         plot.margin = unit(c(5.5,10,5.5,0), "pt"),
+#         axis.title.y = element_text(angle = 90)) +
+#   xlim(1,1.1) + scale_y_discrete(position = "right")
+# grid.arrange(gg1,gg2, ncol=2, widths=c(300,70))
+
+dev.off()
+```
+
+## Venn Diagram
+```{r, eval=FALSE}
+library(VennDiagram)
+ovw_list <- apply(ovw, 2, function(x) rownames(ovw)[x])
+ovw_list$covariates <- NULL
+ovw_list$RNAseq <- ovw_list$mRNA
+venn.diagram(x=ovw_list[c("Methylation", "Mutations", "Drug response", "RNAseq")], 
+             filename = file.path(plotdir, "cll_Venn.tiff"), fill = cols4omics[c("Methylation", "Mutations", "Drug response", "mRNA")])
+```
+
+
+## UpSet plot
+```{r, eval=FALSE}
+library(UpSetR)
+list_part <- ovw_list[c("Methylation", "Mutations", "Drug response", "RNAseq")]
+col_parts <- cols4omics[c("Methylation", "Mutations", "Drug response", "mRNA")]
+pdf(file.path(plotdir, "Upset_CLL_part.pdf"), width = 7, height = 5, onefile = F)
+upset(fromList(list_part), nintersects=NA,
+      sets.bar.color=col_parts[order(sapply(list_part, length), decreasing = T)], sets.x.label = "Number of patients")
+dev.off()
+
+pdf(file.path(plotdir, "Upset_CLL_all.pdf"), width = 7, height = 5, onefile = F)
+list_all <- ovw_list[names(cols4omics)[c(3:1,4:6)]]
+upset(fromList(list_all), nintersects=NA, nsets=10,
+      sets.bar.color=cols4omics[order(sapply(list_all, length), decreasing = T)], sets.x.label = "Number of patients")
+dev.off()
+```
+

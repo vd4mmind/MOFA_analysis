@@ -1,0 +1,153 @@
+---
+title: "GFA_Imputation_Figure"
+author: "Britta Velten"
+date: "5/30/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Imputation/")
+devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(data.table)
+library(ggplot2)
+library(magrittr)
+library(gridExtra)
+library(grid)
+```
+
+```{r}
+ktype <- "learnK"
+```
+
+Get results from imputation
+```{r}
+if(ktype=="learnK") {
+  ### load("benchmark_results_10Aug_full_viab_rmPassengers_learnK.RData")
+   load("benchmark_results_23Aug_full_viab_rmPassengers_learnK.RData")
+} else  load("benchmark_results_10Aug_full_viab_rmPassengers_k5.RData")
+benchmark_results_full <- benchmark_results
+
+if(ktype=="learnK") {
+  ### load("benchmark_results_10Aug_random_viab_rmPassengers_learnK.RData")
+  load("benchmark_results_23Aug_random_viab_rmPassengers_learnK.RData")
+} else  load("benchmark_results_10Aug_random_viab_rmPassengers_k25.RData")
+benchmark_results_random <- benchmark_results
+
+results <- list(random = benchmark_results_random, full = benchmark_results_full)
+rm(benchmark_results)
+```
+
+
+```{r}
+# Filter: Remove models with no shared signal across viability
+# Criterion:
+# Contribution to prediction > 0.05
+# load("R2List_full_1Jul.RData")
+# R2List_full <- R2List
+# 
+# load("R2List_random_1Jul.RData")
+# R2List_random <- R2List
+# 
+# rm(R2List)
+# R2List <- list(random = R2List_random, full = R2List_full)
+# 
+# Models2Exclude <- lapply(R2List, function(R2sub) {
+#   usefulModel <- sapply(seq_along(R2sub), function(i){
+#   R2 <- R2sub[[i]]
+#   viabFactors <- which(R2[,"viab"] >= 0.05)
+#   any(R2[viabFactors,!grepl("viab", colnames(R2))] >= 0.05)
+# })
+# names(R2sub)[!usefulModel]
+# })
+# Models2Exclude <-Reduce(c, Models2Exclude)
+
+# Unique facotrs to missing views are now taken core of with detectPassengers befor imputation, THRESHOLD 0.03
+Models2Exclude <- NULL
+results_small <- lapply(results, function(df) {
+  df <- filter(df, !modelName %in% Models2Exclude & method!="imp_kNN_featurewise")
+  df$method <- as.character(df$method)
+  df[df$method =="imp_kNN_samplewise",]$method <- "kNN"
+  df
+  })
+
+summaries <- lapply(names(results_small), function(dfnm){
+  df <- results_small[[dfnm]]
+  # if(dfnm=="full") df %<>% group_by(method, FullCasesMissing.viab) 
+  if(dfnm=="full") df %<>% group_by(method, FullCasesMissing.mRNA) 
+  # else df %<>% group_by(method, pNA.viab) 
+  else df %<>% group_by(method, pNA.mRNA) 
+  summaryDF <- df %>% dplyr::summarize(mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
+  summaryDF$se <- summaryDF$sd/sqrt(summaryDF$n)
+  summaryDF
+  summaryDF %<>% filter(method!="Guess")
+})
+names(summaries) <- names(results_small)
+``` 
+
+
+
+Plots
+```{r}
+#### pdf(paste("~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Imputation/ImputationFigures/Imputation_viab_10Aug_rmPassengers_",ktype,".pdf",sep=""), width=10, height = 5, onefile = F)
+pdf(paste("~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Imputation/ImputationFigures/Imputation_viab_23Aug_rmPassengers_",ktype,".pdf",sep=""), width=10, height = 5, onefile = F)
+source("~/Documents/utils/get_legend.R")
+
+# gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) +
+gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) +
+  geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
+  geom_line() +guides(col=F)+theme_bw(base_size=18) +
+  theme(plot.title = element_text(size=rel(1)),
+        axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black"))+
+    # geom_point()  +xlab("Precentage of values missing")+ ylab("Mean Squared Error")+ ylim(c(0.005,0.045))+
+  geom_point()  +
+  xlab("Precentage of values missing") +
+  ylab("Mean Squared Error")+ 
+  #ylim(c(0.0075,0.02))+
+  ggtitle(paste("Values missing at random"))
+
+# gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method))+
+gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.mRNA>1), aes(x=FullCasesMissing.mRNA, y=mean_MSE, col=method))+
+    geom_errorbar(aes(ymin=mean_MSE-2*se, ymax=mean_MSE +2*se), width=1) +
+    #geom_line() +guides(col=F)+ ylim(c(0.0075,0.02))+theme_bw(base_size=18)+
+    geom_line() +guides(col=F)+theme_bw(base_size=18)+
+    theme(plot.title = element_text(size=rel(1)),
+          axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black")) +
+    geom_point()  +xlab("Number of patients missing (out of n=121)") +
+    ylab("") + ggtitle(paste("Patients missing all measurements"))
+
+# gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+gg_legend_sum <- get_legend(gg_legend_sum)
+
+# grid.arrange(gg_random, gg_full, gg_legend, ncol=3, widths = c(10,10,3), top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+grid.arrange(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, widths = c(10,10,3))#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+# grid.arrange(gg_summary_random, gg_legend_sum, ncol=2, widths = c(10,3), top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+
+dev.off()
+```
+
+
+```{r}
+# 
+# gg_random <- ggplot(results_small[["random"]], aes(x=pNA.viab, y=MSE, col=method)) +geom_point()+geom_line(stat="summary", fun.y="mean")+
+#   ggtitle(paste("Values missing at random")) +xlab("Precentage of values missing") +
+#   guides(col=F) +theme_bw()
+# 
+# gg_full <- ggplot(filter(results_small[["full"]], FullCasesMissing.viab<80), aes(x=FullCasesMissing.viab, y=MSE, col=method)) +
+#   geom_point()+geom_line(stat="summary", fun.y="mean")+
+#   ggtitle(paste("Patients missing all measurements")) +xlab("Number of patients missing")+
+#   guides(col=F)+theme_bw()
+# 
+# gg_legend <- ggplot(results_small[["full"]], aes(x=pNA.viab, y=MSE, col=method)) +geom_point() + geom_line() 
+# gg_legend <- get_legend(gg_legend)
+```
+
+
+

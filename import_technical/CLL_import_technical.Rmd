@@ -1,0 +1,146 @@
+---
+title: "Load MOFA models and technical inspections"
+author: "Britta Velten"
+date: "10/08/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
+devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
+# library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+```
+
+# Load fitted models
+In total, 10 models are fitted on patients with at least two views observed. k is fixed to 10, mean is learned.
+The following views are included: Mutations (>= 3 occurences), Methylation (top 1%, no XY), mRNA (top 5000, no Y), Drugs (all).
+
+```{r}
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_technical"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+
+#data directories
+outDir<-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/out/test_final/17Aug/"
+dataDir<-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/views/minView=2/"
+files <- list.files(outDir)
+files <- files[grepl(".hdf5",files)]
+
+# load models and sort factors by R2
+AllModels <- lapply(files, function (filenm) loadModel(file.path(outDir, filenm), sortFactors = T))
+
+# mask passenger factors
+AllModels <- lapply(AllModels, detectPassengers)
+
+names(AllModels) <- files
+```
+
+# Preparations
+Set nice names
+```{r}
+# get gene annotations from ENSEMBL
+mRNA_file <- "~/Documents/BioMart/Hsapiens_genes_BioMart.75.txt"
+mRNA = read.csv(file=mRNA_file,header=T,sep="\t",stringsAsFactors=F)
+
+# get drug annotations
+load("~/Documents/MOFA/CLL_MOFA_data/pace/data/drugs.RData")
+
+# set feautre names and factor names
+AllModels <- lapply(AllModels, function(model){
+MOFAtools::featureNames(model)$mRNA <- mRNA$symbol[match(MOFAtools::featureNames(model)$mRNA, mRNA$ens_id)]
+MOFAtools::featureNames(model)$Drugs <- paste(drugs[substr(MOFAtools::featureNames(model)$Drugs,1,5),"name"], substr(MOFAtools::featureNames(model)$Drugs,6,8), sep="")
+MOFAtools::factorNames(model)[grepl("^0",MOFAtools::factorNames(model))] <- "intercept"
+model
+})
+```
+
+
+# Robustness to initilizations
+```{r}
+names(AllModels) <- sub(".hdf5","", names(AllModels))
+pdf(file.path(plotdir,"Robustness_CLL.pdf"), onefile = F, width = 7, height = 7)
+cMout <- compareModels(AllModels, show_colnames=F, annotation_legend=F)
+dev.off()
+```
+
+
+# Comparison to models using only common set of patients
+```{r}
+commonDir <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/out/test_final/19May/"
+files_common <- list.files(commonDir)
+files_common <- files_common[grepl("common_small_noXY_alldrugs_mean",files_common)]
+
+CommonModels <- lapply(files_common, function (filenm) 
+  loadModel(file.path(commonDir, filenm), sortFactors = T))
+names(CommonModels) <- paste("common", 1:length(CommonModels))
+
+pdf(file.path(plotdir,"Robustness_CLL_compare_common.pdf"), onefile = F, width = 10, height = 7)
+cMc <- compareModels(c(CommonModels, AllModels))
+dev.off()
+```
+
+
+# Pick a model based on ELBO
+```{r}
+modelidx <- which.max(sapply(AllModels, function(model) model@TrainStats$elbo[length(model@TrainStats$elbo)]))
+modelidx
+model <- AllModels[[modelidx]]
+```
+
+Get relevant parts from model
+```{r}
+data <- model@TrainData
+k <- model@Dimensions$K
+Z <- getExpectations(model, "Z", "E")
+weights <- getExpectations(model, "SW", "E")
+```
+
+Get other relevant covariates
+```{r}
+load("~/Documents/MOFA/CLL_MOFA_data/pace/data/patmeta.RData")
+covariates <- cbind(t(data$Mutations[rowSums(data$Mutations, na.rm = T) >=5, ]), patmeta[rownames(Z),])
+colnames(covariates)[grep("Gender",colnames(covariates) )] <- "sex"
+colnames(covariates)[grep("del13q14_any",colnames(covariates) )] <- "del13q14"
+covariates$age<-rowMeans(covariates[, c("Age4Pilot", "Age4Main")], na.rm = T)
+covariates$sex <- ifelse(covariates$sex == "m", 0,1)
+covariates <- covariates[, !grepl("T5|T6|Age4Pilot|Age4Main|Diagnosis|died|treated|treatedAfter|IGHV\\.1", colnames(covariates) )]
+covariates[,"MethylationCluster"] <- covariates[,"ConsClust"]
+covariates <- covariates[, !grepl("ConsClust", colnames(covariates) )]
+covariates$missingViews <- rowSums(sapply(data, function(dat) apply(is.na(dat), 2, all)))
+```
+
+# Flip sign of latent factors
+To have a consisten hazard ratio for IGHV and its LF
+```{r}
+Z[,"1"] <- -Z[,"1"]
+```
+
+# Correlation of latent factors
+```{r}
+pdf(file.path(plotdir,"FactorCor_CLL.pdf"), onefile = F, width = 8, height = 7)
+fout <- FactorsCorPlot(model)
+dev.off()
+```
+
+# Save workspace to be used in other down-stream analysis scripts
+```{r}
+rm(plotdir)
+save(list=ls(), file="out_import_technical.RData")
+```
+
+```{r}
+sessionInfo()
+```
+
