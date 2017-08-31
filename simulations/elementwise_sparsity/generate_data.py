@@ -11,7 +11,6 @@ import os
 from MOFA.core.simulate import Simulate
 
 
-# def sampleAlpha(K, M, active=1., inactive=1e6):
 def sampleAlpha(K, M, active=1., inactive=1e4):
   alpha_tmp = [s.ones(M)*inactive]*K
   for k in xrange(K):
@@ -46,10 +45,10 @@ def generate_data(outfile, M=3, N=100, K=10, D=5000, missingness=0.0):
   data['Z'] = stats.norm.rvs(loc=0, scale=1, size=(N,K))
 
   # data['alpha'] = [s.random.choice([1., 1e6], K) for m in xrange(M)]
-  # data['alpha'] = [ s.ones(K) for m in xrange(M) ]
-  data['alpha'] = sampleAlpha(K=K, M=M, active=1, inactive=1e4)
+  data['alpha'] = [ s.ones(K) for m in xrange(M) ]
+  # data['alpha'] = sampleAlpha(K=K, M=M, active=1, inactive=1e4)
 
-  data['theta'] = [ s.ones((D[m],K))*0.5 for m in xrange(M) ]
+  data['theta'] = [ s.ones((D[m],K))*0.75 for m in xrange(M) ]
   # data['theta'] = sampleTheta(K=K, M=M, a=1, b=1)
 
   data['S'], data['W'], data['W_hat'], _ = tmp.initW_spikeslab(theta=data['theta'], alpha=data['alpha'])
@@ -61,15 +60,7 @@ def generate_data(outfile, M=3, N=100, K=10, D=5000, missingness=0.0):
   #   likelihood="warp", missingness=missingness, missing_view=missing_view)
   Y_gaussian = tmp.generateData(W=data['W'], Z=data['Z'], Tau=data['tau'], Mu=data['mu'],
     likelihood="gaussian", missingness=missingness, missing_view=missing_view)
-  # Y_poisson = tmp.generateData(W=data['W'], Z=data['Z'], Tau=data['tau'], Mu=data['mu'],
-  	# likelihood="poisson", missingness=missingness, missing_view=missing_view)
-  # Y_bernoulli = tmp.generateData(W=data['W'], Z=data['Z'], Tau=data['tau'], Mu=data['mu'],
-  	# likelihood="bernoulli", missingness=missingness, missing_view=missing_view)
-  # Y_binomial = tmp.generateData(W=data['W'], Z=data['Z'], Tau=data['tau'], Mu=data['mu'],
-  # 	likelihood="binomial", min_trials=10, max_trials=50, missingness=missingness)
 
-  # likelihoods = s.random.choice(['gaussian', 'bernoulli', "poisson"], M)
-  # likelihoods = ['gaussian', 'bernoulli', "poisson"]
   likelihoods = ['gaussian']*M
 
   data["Y"] = [None] * M
@@ -83,10 +74,10 @@ def generate_data(outfile, M=3, N=100, K=10, D=5000, missingness=0.0):
       data["Y"][i] = Y_bernoulli[i]
 
   # Save data
+  s.savetxt(outfile+"_Z.txt", data["Z"], fmt='%.3f', delimiter=' ')
   for m in xrange(M):
     s.savetxt(outfile+"_W_"+str(m)+".txt", data["W"][m], fmt='%.3f', delimiter=' ')
     s.savetxt(outfile+"_"+str(m)+".txt", data["Y"][m], fmt='%.3f', delimiter=' ')
-
 
 
 
@@ -113,13 +104,13 @@ if __name__ == "__main__":
 
 
   # Varying number of views
-  M_vals = [ 1, 3, 5, 10, 15, 30 ]
-  # M_vals = s.linspace(2.0, 20.0, num=20, dtype=int)
-  D = 5000
-  K = 9
-  N = 100
-  print "Generating M..."
-  for m in M_vals:
-    for trial in xrange(ntrials):
-      outprefix = "%s/M/trial%d/%d" % (outdir, trial, m)
-      # generate_data(outprefix, N=N, M=m, K=K, D=D)
+  # M_vals = [ 1, 3, 5, 10, 15, 30 ]
+  # # M_vals = s.linspace(2.0, 20.0, num=20, dtype=int)
+  # D = 5000
+  # K = 9
+  # N = 100
+  # print "Generating M..."
+  # for m in M_vals:
+  #   for trial in xrange(ntrials):
+  #     outprefix = "%s/M/trial%d/%d" % (outdir, trial, m)
+  #     # generate_data(outprefix, N=N, M=m, K=K, D=D)
