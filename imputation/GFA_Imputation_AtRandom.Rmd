@@ -1,0 +1,141 @@
+---
+title: "GFA_Imputation"
+author: "Britta Velten"
+date: "14 August 2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(data.table)
+library(ggplot2)
+```
+
+# Overview of the model
+
+For imputation, we include n=121 samples into the model, which have complete information in the following views
+
+- RNAseq: mRNA (after removal of genes with low counts, variance stabilized, top 5000 most variable)
+- methylaltion (transformed to M values and filtered to top 1% most variable CpG sites)
+- viabilities (all drugs and concentrations)
+
+Additional, mutations are included as forth view despite missing values.
+
+Pre-processing scripts from the orginial data files are found in the data folder/views.
+Some values are masked to be imputed here. The fraction of masked entries can be specified as parameter for the python run_AtRandom script.
+
+# Source script performing imputations
+```{r}
+source("ImputeBenchmark.R")
+```
+
+
+#In/Out options and define setting (ktype/view)
+Following runs are available:
+
+- viab 23Aug
+- expr 24Aug
+
+```{r}
+ktype <- "learnK" #k25
+view <- "viab"  #expr
+run_date <- "23Aug" #24Aug
+```
+
+```{r}
+if(view=="expr"){
+outDir <- paste0("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/out/imputation/missingAtRandom/", run_date)
+} else if(view=="viab") {
+  outDir <- paste0("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/out/imputation/missingAtRandom/",run_date)
+} else stop("No masked models for given view")
+
+dataDir <-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/views/minView=all/"
+
+```
+
+#Get all models for imputation
+```{r}
+allRuns <- list.files(outDir)
+ListModels <- lapply(allRuns[grepl(".hdf5",allRuns)], function(run) loadModel(file.path(outDir, run), sortFactors = F))
+
+# check number of factors
+sapply(seq_along(ListModels), function(i) getDimensions(ListModels[[i]])$K)
+
+# remove values for samples missing a view if the factor is unique to this view (now taken care of in loadModel)
+# ListModels <- lapply(ListModels, detectPassengers)
+# sapply(lapply(seq_along(ListModels), function(i) ListModels[[i]]@Expectations$Z$E), function(z) any(is.na(z)))
+
+# name models
+names(ListModels) <- allRuns[grepl(".hdf5",allRuns)]
+
+# collect experiment infos in dataframe
+run<-sapply(strsplit(allRuns, "_"), function(l) sub(".hdf5","",l[7]))
+ELB <- sapply(ListModels, function(model) max(model@TrainStats$elbo, na.rm = T))
+missing <- sapply(ListModels, function(m) sum(is.na(m@TrainData$viab))/prod(dim(m@TrainData$viab)))
+labelmissing <- sapply(strsplit(names(missing), "_"), function(l) l[1])
+df <- data.frame(true=missing, name = names(missing), label=labelmissing)
+rownames(df) <-NULL
+df
+```
+
+#Get true data
+```{r}
+views <- names(ListModels[[1]]@TrainData)
+allData <- paste(views, ".txt", sep="")
+DataList <- lapply(allData, function(file) read.table(file.path(dataDir, file)))
+names(DataList) <- views
+```
+
+
+#Impute
+
+## Using all views
+Impute and evaluate imputations
+```{r}
+imp_results<-lapply(names(ListModels), function(modelnm){
+  modeltmp <- ListModels[[modelnm]]
+  imp.out<-ImputeBenchmark(modeltmp,DataList)
+  imp.out$MSEdf$modelName <- modelnm
+  imp.out
+}) 
+
+benchmark_results<-lapply(1:length(imp_results), function(impidx) {
+  dftmp<-imp_results[[impidx]]$MSEdf
+  dftmp$param_PercNA <- labelmissing[impidx]
+  dftmp$run <- run[impidx]
+  dftmp
+}
+  ) %>% bind_rows()
+benchmark_results$ELB <- ELB[benchmark_results$modelName]
+
+# save imputation results
+save(benchmark_results, file=paste("benchmark_results_",run_date,"_random_",view,"_rmPassengers_",ktype,".RData", sep=""))
+```
+
+```{r, eval=F, echo=F}
+# Impute using only masked view:
+
+# imp_results<-lapply(names(ListModels), function(modelnm){
+#   modeltmp <- ListModels[[modelnm]]
+#   imp.out<-ImputeBenchmarkOneView(modeltmp,"viab",DataList)
+#   imp.out$MSEdf$modelName <- modelnm
+#   imp.out
+# }) 
+# 
+# benchmark_results<-lapply(1:length(imp_results), function(impidx) {
+#   dftmp<-imp_results[[impidx]]$MSEdf
+#   dftmp$param_PercNA <- labelmissing[impidx]
+#   dftmp$run <- run[impidx]
+#   dftmp
+# }
+#   ) %>% bind_rows()
+# 
+# benchmark_results$ELB <- ELB[benchmark_results$modelName]
+# save(benchmark_results, file=paste("SingleViewBenchmark_results_10Aug_random_viab_rmPassengers_",ktype,".RData", sep=""))
+```
+

@@ -1,0 +1,33 @@
+This folder contains script for all anlysis in the package:
+
+1) CLL_import_technical.Rmd: 
+	- imports .hdf5 model files produced by Python
+	- sets proper names to models
+	- tests robustness across initializations and old fits with common patients
+	- picks a model based on ELBO for further analysis
+	- gets relevant stuff from the model and Metadata from PACE package
+	- plots correlation of factors
+	- save to "out_import_technical.RData" used for the other scripts
+
+2) Overview_CLLData.Rmd
+	- generates the overview tile plot on data in the CLL data set used for MOFA
+
+3) MOFA_CLL_OverviewFigure.Rmd
+	- Code for Figure 2
+	- imports "out_import_technical.RData" generated in (1)
+
+4) MOFA_CLL_IGHV.Rmd
+	- Code for Figure 3 and S10 (imputation of IGHV label)
+	- imports "out_import_technical.RData" generated in (1)
+
+5) MOFA_CLL_survival.Rmd
+	- Code for Figure 4 and S14 (survival prediction)
+	- imports "out_import_technical.RData" generated in (1)
+
+Utility function are in
+- plottingUtils.R
+- utils_SurvPrediction.R (not used in the current analysis)
+
+Imputation functions are in Imputation/
+
+iCluster functions are in iCluster
