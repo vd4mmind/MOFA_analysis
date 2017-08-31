@@ -8,9 +8,7 @@ output:
 ---
 
 ```{r, message=F, warning=F}
-setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
-devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
-# library(MOFAtools)
+library(MOFAtools)
 library(dplyr)
 library(reshape2)
 library(pheatmap)
@@ -21,6 +19,7 @@ library(GGally)
 library(magrittr)
 library(Hmisc)
 library(cowplot)
+library(beeswarm)
 # library(pace)
 ```
 
@@ -33,34 +32,35 @@ load("out_import_technical.RData")
 plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_IGHV"
 if(!dir.exists(plotdir)) dir.create(plotdir)
 
+# idx for IGHV latent factor
 idx_ighv <- "1"
+
+# helper function for some plots
+source("plottingUtils.R")
 ```
 
 
 
-# Beeswarm plots for Methylation Cluster
+# 3(a) Beeswarm plots for Methylation Cluster
 ```{r}
-library(beeswarm)
+# get methylation cluster and define colors
 MC <- factor(covariates[,"MethylationCluster"], levels = c("LP", "IP", "HP"))
-IGHV <- as.factor(covariates[,"IGHV"])
-IGHV <- ifelse(IGHV==0, 16, ifelse(IGHV==1, 1,2 ))
 col4MC <- c(LP="navy", IP="darkgoldenrod", HP="darkred")
 MCcolors <- col4MC[MC]
 
+#make plot
 pdf(file.path(plotdir,"BeeswarmMC.pdf"), width = 3, height = 5, useDingbats=F)
 par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
 bs <-beeswarm(Z[,idx_ighv], pwcol = MCcolors, pch = 16,
           ylab = paste("Factor", idx_ighv), xlab = "",
           cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
-
 legend("top", legend =  levels(MC), title = "Methylation Cluster", pch = 16, col = col4MC, ncol = 3,
        inset=c(0,-0.2), cex=1.2, box.lwd = 0, box.col = "white")
 dev.off()    
-
 ```
 
-#PC on methylation data vs LF
-```{r}
+Alternatives: PC on methylation data vs LF colored by MC.
+```{r, evl=F, echo=F}
 # viewnm <- "Methylation"
 # haveOmic <- apply(model@TrainData[[viewnm]],2,function(p) !any(is.na(p)))
 # pc.out <- prcomp(t(model@TrainData[[viewnm]][,haveOmic]))
@@ -73,7 +73,7 @@ dev.off()
 
 
 
-# Classification and Agreeemnt with label
+# Imputation of IGHV status based on MOFA factor
 MOFA can classify patients by IGHV status (in previous models this gave the same result when dropping mut view see GFA_Classification)
 ```{r}
 # methylation cluster
@@ -92,18 +92,17 @@ ZIGHV <- kmeans(Z[,idx_ighv], 2, nstart=1000, iter.max = 1000)
 ZIGHV <- ZIGHV$cluster
 ZIGHV 
 
-
 # label clusters as U and M-CLL
 IGHV[IGHV==0] <- "U"
 IGHV[IGHV==1] <- "M"
 ZIGHV[ZIGHV==1]<-"M"
 ZIGHV[ZIGHV==2]<-"U"
 
-# ZIGHV <- ifelse(Z[,idx_ighv]<0.6, "M", "U")
-
+# collect labels and factor values in data-frame
 df_clustering <- data.frame(IGHV = as.factor(IGHV), ZIGHV = ZIGHV, 
                             MC = as.factor(MC), patID = rownames(Z),
                             Z = Z[,idx_ighv])
+
 
 #check agreement between clusters
 clagree <- paste(ZIGHV ,IGHV, sep="_")
@@ -111,15 +110,21 @@ clagree <- ifelse(clagree %in% c("M_M", "U_U"), "agreement with label",
                   ifelse(grepl("missing",clagree), "label missing",
                          ifelse(clagree=="M_U", "U-CLL clustered as M-CLL", "M-CLL clustered as U-CLL" )))
 df_clustering$agreement <- clagree
+```
 
+Those samples are different:
+```{r}
+filter(df_clustering, grepl("clustered",agreement)) %>% select(IGHV, ZIGHV, patID, Z, MC)
+```
+
+
+Define colors
+```{r}
 #colors
 colors_agreemet <- c("agreement with label" = "darkgreen", 
                                "label missing" ="gray", 
                                "U-CLL clustered as M-CLL" ="sienna",
                                "M-CLL clustered as U-CLL" = "orange")
-scatterPlot(model, c("1", "2"), color_by = ZIGHV, shape_by = IGHV)
-
-# save(df_clustering, file="df_clustering.RData")
 
 #colors for heatmap annotations
 anno_colors<- list(IGHV_label = c("M"="red", "U"="blue", "missing" = "gray"),
@@ -130,8 +135,52 @@ anno_colors<- list(IGHV_label = c("M"="red", "U"="blue", "missing" = "gray"),
 ```
 
 
-Classification based on other omics
+## S10(a): Beeswarm plots for IGHV colored by agreement with clincial label
 ```{r}
+# use colors defined above
+col4bees <- anno_colors$agreement[df_clustering$agreement]
+
+# make plot
+pdf(file.path(plotdir,"BeeswarmMislabelling.pdf"), width = 3, height = 5, useDingbats=F)
+par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+bs <-beeswarm(df_clustering$Z, pwcol = col4bees, pch = 16,
+          ylab = paste("Factor", idx_ighv), xlab = "",
+          cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+dev.off()    
+
+```
+
+
+## S10(b): Pie plot of IGHV label agreement
+```{r}
+#pie plot
+df_pie <- df_clustering %>% group_by(agreement) %>% dplyr::summarize(value=length(patID))
+df_pie$agreement <- factor(df_pie$agreement, levels = rev(df_pie$agreement))
+
+pdf(file.path(plotdir, "IGHV_classification_pie.pdf"))
+gg_MOFA <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
+  geom_bar(stat="identity",width = 1)+
+  coord_polar("y", start=0)+
+  # scale_fill_brewer(palette="Dark2")+
+  theme_minimal() + xlab("") + ylab("")+
+  scale_fill_manual(values=colors_agreemet) +
+  # ggtitle("Classification of IGHV status") +
+  theme(text=element_text(size=22),
+        legend.position = "bottom",
+        axis.text = element_blank(),
+        axis.line = element_blank()) +
+  guides(fill=guide_legend(title="", ncol=1),
+         col=F) +
+  geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=10)+
+  scale_color_manual(values=colors_agreemet)
+gg_MOFA
+dev.off()
+```
+
+
+# Imputations based on single omics
+Classification based on other omics
+```{r, echo=F}
 imputePerOmic <- function(viewnm){
 haveOmic <- apply(model@TrainData[[viewnm]],2,function(p) !any(is.na(p)))
 
@@ -191,109 +240,42 @@ gg
 }
 ```
 
+Impute IGHV label per omic
 ```{r}
 gg_mRNA <- imputePerOmic("mRNA")
 gg_meth <-imputePerOmic("Methylation")
 gg_viab <-imputePerOmic("Drugs")
 ```
 
-Pie plot
-```{r}
-#pie plot
-df_pie <- df_clustering %>% group_by(agreement) %>% dplyr::summarize(value=length(patID))
-df_pie$agreement <- factor(df_pie$agreement, levels = rev(df_pie$agreement))
-
-pdf(file.path(plotdir, "IGHV_classification_pie.pdf"))
-gg_MOFA <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
-  geom_bar(stat="identity",width = 1)+
-  coord_polar("y", start=0)+
-  # scale_fill_brewer(palette="Dark2")+
-  theme_minimal() + xlab("") + ylab("")+
-  scale_fill_manual(values=colors_agreemet) +
-  # ggtitle("Classification of IGHV status") +
-  theme(text=element_text(size=22),
-        legend.position = "bottom",
-        axis.text = element_blank(),
-        axis.line = element_blank()) +
-  guides(fill=guide_legend(title="", ncol=1),
-         col=F) +
-  geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=10)+
-  scale_color_manual(values=colors_agreemet)
-gg_MOFA
-dev.off()
-```
-
+Save plots
 ```{r}
 pdf(file.path(plotdir,"Class_comparison_pies.pdf"))
 grid.arrange(gg_MOFA +guides(fill=F) + ggtitle("MOFA"), gg_mRNA+guides(fill=F), gg_meth+guides(fill=F), gg_viab+guides(fill=F), get_legend(gg_mRNA))
 dev.off()
 ```
 
-# IGHV classification and clustering on various biological layers
+# S10(c)-(e): Heatmap of omic layers IGHV classification annotation
 ```{r}
-#set nice name
+#set nice names
 df_clustering$IGHV_predicted <- df_clustering$ZIGHV
 df_clustering$IGHV_label <- df_clustering$IGHV
-df_clustering$haveRNAseq <- ifelse(apply(data$mRNA, 2, function(p) !all(is.na(p)))[rownames(df_clustering)],
-                                   "yes", "no")
 
-survivalDataTTT <- as.matrix(patmeta[,c("T5","treatedAfter")])
-survivalDataTTT <- survivalDataTTT[!is.na(survivalDataTTT[,1]),]
-df_clustering$haveTTT <- ifelse(rownames(df_clustering) %in% rownames(survivalDataTTT),
-                                   "yes", "no")
-
-#callbakc function to order as much as possible in agreement with continious Z
-orderbyZ <- function(hc, mat){
-   dend = reorder(as.dendrogram(hc), wts = Z[,idx_ighv])
-   as.hclust(dend)
-}
-
-# Omic-wise heatmaps
-## Drugs
-pdf(file.path(plotdir, "HeatmapDrugs_IGHV.pdf"), width = 8, height = 7, onefile = F)
-drugData <- data$Drugs
-drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
-pheatmap(cor(drugData),
-         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on drug response data",
-         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0#, 
-         #clustering_callback = orderbyZ
-         )
-dev.off()
-
-pdf(file.path(plotdir, "Heatmap_raw_Drugs_IGHV.pdf"), width = 10, height = 7, onefile = F)
-pheatmap(t(drugData),
-         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on drug response data",
-         annotation_colors  =  anno_colors, annotation_legend = F)
-dev.off()
-
-
-# drugData <- data$Drugs[abs(weights$Drugs[,idx_ighv])>quantile(abs(weights$Drugs[,idx_ighv]), 0.9),]
-# pheatmap(t(drugData),
-#          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-#          show_rownames = F, show_colnames = T, main = "Clustering based on top-weighted drug responses",
-#          annotation_colors  =  anno_colors, annotation_legend = T)
+#callback function to order as much as possible in agreement with continious Z - not used at the moment but could make it clearer
+# orderbyZ <- function(hc, mat){
+#    dend = reorder(as.dendrogram(hc), wts = Z[,idx_ighv])
+#    as.hclust(dend)
+# }
+```
 
 ## Methylation
-pdf(file.path(plotdir, "HeatmapMeth_IGHV.pdf"), width = 8, height = 7, onefile = F)
+```{r}
+pdf(file.path(plotdir, "HeatmapMeth_IGHV.pdf"), width = 5.6, height = 4.9, onefile = F)
 methData <- data$Methylation
 methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
 pheatmap(cor(methData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on methylation data",
+         show_rownames = F, show_colnames = F, main = "Methylation",
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0#,
-          #clustering_callback = orderbyZ
-         )
-dev.off()
-
-pdf(file.path(plotdir, "Heatmap_legend.pdf"), width = 8, height = 7, onefile = F)
-methData <- data$Methylation
-methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
-pheatmap(cor(methData),
-         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on methylation data",
-         annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0#,
           #clustering_callback = orderbyZ
          )
 dev.off()
@@ -301,7 +283,7 @@ dev.off()
 pdf(file.path(plotdir, "Heatmap_raw_Meth_IGHV.pdf"), width = 10, height = 7, onefile = F)
 pheatmap(t(methData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on methylation data",
+         show_rownames = F, show_colnames = F, main = "Methylation",
          annotation_colors  =  anno_colors, annotation_legend = F)
 dev.off()
 
@@ -311,14 +293,59 @@ dev.off()
 #          show_rownames = F, show_colnames = F, main = "Clustering based on top-weighted methylation sites",
 #          annotation_colors  =  anno_colors, annotation_legend = T)
 
+```
+
+### legend
+```{r}
+pdf(file.path(plotdir, "Heatmap_legend.pdf"), width = 8, height = 7, onefile = F)
+methData <- data$Methylation
+methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
+pheatmap(cor(methData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "Methylation",
+         annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0#,
+          #clustering_callback = orderbyZ
+         )
+dev.off()
+```
+
+## Drugs
+```{r}
+## Drugs
+pdf(file.path(plotdir, "HeatmapDrugs_IGHV.pdf"), width = 5.6, height = 4.9, onefile = F)
+drugData <- data$Drugs
+drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
+pheatmap(cor(drugData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "Drug response",
+         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0#, 
+         #clustering_callback = orderbyZ
+         )
+dev.off()
+
+pdf(file.path(plotdir, "Heatmap_raw_Drugs_IGHV.pdf"), width = 10, height = 7, onefile = F)
+pheatmap(t(drugData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "Drug response",
+         annotation_colors  =  anno_colors, annotation_legend = F)
+dev.off()
+
+
+# drugData <- data$Drugs[abs(weights$Drugs[,idx_ighv])>quantile(abs(weights$Drugs[,idx_ighv]), 0.9),]
+# pheatmap(t(drugData),
+#          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+#          show_rownames = F, show_colnames = T, main = "Clustering based on top-weighted drug responses",
+#          annotation_colors  =  anno_colors, annotation_legend = T)
+```
 
 ## mRNA
-pdf(file.path(plotdir, "HeatmapRNAseq_IGHV.pdf"), width = 8, height = 7, onefile = F)
+```{r}
+pdf(file.path(plotdir, "HeatmapRNAseq_IGHV.pdf"), width = 5.6, height = 4.9, onefile = F)
 mRNAData <- data$mRNA
 mRNAData <- mRNAData[,apply(mRNAData,2, function(d) !all(is.na(d)))]
 pheatmap(cor(mRNAData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on mRNA data",
+         show_rownames = F, show_colnames = F, main = "mRNA",
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0#,
          #clustering_callback = orderbyZ
          )
@@ -327,7 +354,7 @@ dev.off()
 pdf(file.path(plotdir, "Heatmap_raw_RNAseq_IGHV.pdf"), width = 10, height = 7, onefile = F)
 pheatmap(t(mRNAData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Clustering based on mRNA data",
+         show_rownames = F, show_colnames = F, main = "mRNA",
          annotation_colors  =  anno_colors, annotation_legend = F)
 dev.off()
 
@@ -338,88 +365,99 @@ dev.off()
 #          annotation_colors  =  anno_colors, annotation_legend = T)
 ```
 
-# PCA
-```{r}
-
+# PCA per omic showing mislabeled cases
+```{r, echo=F}
 plotPCA <- function(viewnm){
   PCA_out <- data.frame(prcomp(t(model@TrainData[[viewnm]][,apply(model@TrainData[[viewnm]],2,function(r) !any(is.na(r)))]))$x[,1:4])
-  PCA_out <- cbind(PCA_out,  Zdf[rownames(PCA_out),])
-  
+  PCA_out <- cbind(PCA_out,  df_clustering[rownames(PCA_out),])
+  PCA_out %<>% mutate(disagreement = grepl("clustered", agreement))
+    
   gg1 <- ggplot(PCA_out, aes(x=PC1, y=PC2, col=ZIGHV, shape =disagreement)) +geom_point() +
-  scale_color_manual(values=anno_colors$IGHV_predicted)  + coord_fixed()+scale_shape_manual(values=c("TRUE"=3, "FALSE"=19))+
+  scale_color_manual(values=anno_colors$IGHV_predicted)  + coord_fixed()+scale_shape_manual(values=c("TRUE"=17, "FALSE"=19))+
     ggtitle(viewnm)
   gg2 <- ggplot(PCA_out, aes(x=PC1, y=PC2, col=IGHV, shape =disagreement)) +geom_point() +
-  scale_color_manual(values=anno_colors$IGHV_label) + coord_fixed() +scale_shape_manual(values=c("TRUE"=3, "FALSE"=19))+
+  scale_color_manual(values=anno_colors$IGHV_label) + coord_fixed() +scale_shape_manual(values=c("TRUE"=17, "FALSE"=19))+
     ggtitle(viewnm)
   
   # grid.arrange(gg1,gg2, ncol=2)
   
   return(list(gg_Z=gg1, gg_c=gg2))
 }
+```
 
+```{r}
 gg_meth <- plotPCA("Methylation")
 gg_mRNA <- plotPCA("mRNA")
 gg_drugs <- plotPCA("Drugs")
 
 pdf(file.path(plotdir, "PCA_single_omic.pdf"))
-grid.arrange(gg_meth[[1]],  gg_meth[[2]], gg_mRNA[[1]],
-             gg_mRNA[[2]], gg_drugs[[1]], gg_drugs[[2]])
+grid.arrange(gg_meth[[2]] +guides(color=F, shape=F),  gg_drugs[[2]]+guides(color=F, shape=F), gg_mRNA[[2]]+guides(color=F, shape=F), ncol=2)#,
+             #gg_mRNA[[1]], gg_meth[[1]], gg_drugs[[1]])
 dev.off()
-
 ```
+
 
 # Top features on IGHV factor
 No enrichment on gene sets (s. overview figure).
 
-## mRNA
+## 3 (b) mRNA
 ```{r}
-source("plottingUtils.R")
 ntop_mRNA <- 20
-knownGenes <- c("AKAP12", "ADAM29", "BCL7A", "CLECSF2", "FCGBP", "FLJ10884", "FUT8", "LPL", "TCF7", "WNT3", "APOD", "SPG20", "MYL9", "NRIP1", "SPAP1", "SPRY2", "TGFBR3", "ZAP70", "COBLL1", "ZNF667", "SEPT10", "CRY1", "PLD1", "BCL7A", "WNT9A")
+# list of previously mentioned IGHV associated genes
+knownGenes <- c("AKAP12", "ADAM29", "BCL7A", "CLECSF2", "FCGBP", "FLJ10884",
+                "FUT8", "LPL", "TCF7", "WNT3", "APOD", "SPG20", "MYL9", "NRIP1",
+                "SPAP1", "SPRY2", "TGFBR3", "ZAP70", "COBLL1", "ZNF667", "SEPT10",
+                "CRY1", "PLD1", "BCL7A", "WNT9A")
+
+#plot top weights
 pdf(file.path(plotdir,"mRNAweigths_IGHV.pdf"),width=5, height=8)
 showTopWeightsAndColor(model, "mRNA", idx_ighv, nfeatures = ntop_mRNA, Features2color = knownGenes, scalePerView = T, col2highlight = "darkorange")
 dev.off()                                                                                                                               
 ```
 
-## Drugs
+## 3(d) Drugs
 ```{r}
 # build df for drug weights
-# drugW <- getWeights(model, "Drugs", "all")
-# drugW <- drugW/max(abs(drugW))
-# drugW <- drugW[,idx_ighv]
-# dfDrugs <- as.data.frame(drugW)
 dfDrugs <- as.data.frame(getWeights(model, "Drugs", idx_ighv))
 colnames(dfDrugs) <- "loadings"
+
+#scale loadings
 dfDrugs$loadings <- dfDrugs$loadings/max(abs(dfDrugs$loadings))
+dfDrugs %<>% mutate(abs_loadings = abs(loadings))
+
+# get concentration, drug and target category
 dfDrugs$drug <- substr(rownames(dfDrugs),1,nchar(rownames(dfDrugs))-2)
 dfDrugs$conc <- substr(rownames(dfDrugs),nchar(rownames(dfDrugs)),nchar(rownames(dfDrugs)))
 dfDrugs$drugid <- rownames(drugs)[match(dfDrugs$drug, drugs[,"name"])]
 dfDrugs %<>% mutate(target_category = drugs[drugid,"target_category"])
 dfDrugs %<>% mutate(pathway = drugs[drugid,"pathway"])
 dfDrugs %<>% mutate(main_targets = drugs[drugid,"main_targets"])
-dfDrugs %<>% mutate(abs_loadings = abs(loadings))
 
-#average across concentrations
+# take average across concentrations
 dfDrugsAv <- dfDrugs %>% group_by(drug) %>% 
   dplyr::summarise(meanloadings = mean(loadings),
             target_category=unique(target_category),
             main_targets=unique(main_targets),
             pathway=unique(pathway))
 dfDrugsAv$absMeanloading <- abs(dfDrugsAv$meanloadings)
-      
+
+# make broader target categories      
 dfDrugsAv %<>% mutate(main_targets2 = ifelse(grepl("CHK",main_targets), "CHK", main_targets))
 dfDrugsAv %<>% mutate(main_targets2 = ifelse(grepl("PI3K|SYK|BTK",main_targets2), "BCR pathway", main_targets2))
 dfDrugsAv %<>% mutate(main_targets2 = ifelse(grepl("AKT|LYN|SRC",main_targets2), "BCR pathway", main_targets2))
 dfDrugsAv %<>% mutate(main_targets2 = ifelse(!main_targets2 %in% c("BCR pathway", "CHK", "HSP90"), "other", main_targets2))
 
+# define colors
 cols <- RColorBrewer::brewer.pal(10,"Paired")[c(1,3,9)]
 names(cols) <-  c("BCR pathway", "CHK" , "HSP90")
 col4Categories <- c(other="gray",cols)
+
 # Sort according to loadings
 ntop <- 15
-  dfDrugsAv <- dfDrugsAv[order(dfDrugsAv$absMeanloading, decreasing = T)[1:ntop],]
-  dfDrugsAv$drug <- factor(dfDrugsAv$drug, levels=rev(dfDrugsAv$drug))
+dfDrugsAv <- dfDrugsAv[order(dfDrugsAv$absMeanloading, decreasing = T)[1:ntop],]
+dfDrugsAv$drug <- factor(dfDrugsAv$drug, levels=rev(dfDrugsAv$drug))
 
+# Make plot
 pdf(file.path(plotdir,"drugweigths_IGHV.pdf"),width=7, height=5)
 ggplot(dfDrugsAv,aes(x=drug, y=absMeanloading, col= main_targets2)) +
     geom_point(size=3) +
@@ -447,60 +485,47 @@ dev.off()
 ```
 
 
-# Heatmap mRNA
+# 3 (c) Heatmap mRNA
 ```{r}
+# get top genes and patient having RNAseq
 topGenes <- names(sort(abs(model@Expectations$SW$mRNA$E[,idx_ighv]), decreasing = T))[1:ntop_mRNA]
 patients2include <- colnames(data$mRNA)[apply(data$mRNA,2, function(p) !any(is.na(p)))]
-anno_df <- data.frame(Z=Z[,"1"])#, ZIGHV=ZIGHV)
+
+# annotate by IGHV factor 
+anno_df <- data.frame(Z=Z[,idx_ighv])#, ZIGHV=ZIGHV)
 colnames(anno_df) <- c("Factor 1")#, "Clusters")
 rownames(anno_df) <- rownames(Z)
 annoHM_colors <- list(c("blue", "red"))#, c("M"="red", "U"="blue"))
 names(annoHM_colors) <- c("Factor 1")#, "Clusters")
 
-pdf(file.path(plotdir,"heatmap_mRNA_IGHV.pdf"),width=10, height=7, onefile = F)
-pheatmap(t(data$mRNA[topGenes, patients2include ]), show_rownames = F, cluster_cols = F, fontsize = 18, annotation_row = anno_df, annotation_legend = F)
-dev.off()
+# pdf(file.path(plotdir,"heatmap_mRNA_IGHV.pdf"),width=10, height=7, onefile = F)
+# pheatmap(t(data$mRNA[topGenes, patients2include ]), show_rownames = F, cluster_cols = F, fontsize = 18, annotation_row = anno_df, annotation_legend = F)
+# dev.off()
 
-pdf(file.path(plotdir,"heatmap_mRNA_IGHV_rotated.pdf"),width=7, height=8, onefile = F)
-pheatmap(data$mRNA[rev(topGenes), patients2include[order(Z[patients2include, idx_ighv])] ],
-         show_colnames = F, cluster_rows = F, cluster_cols = F,
-         fontsize = 18, annotation_col = anno_df, annotation_legend = F,
-         gaps_col = which(ZIGHV[order(Z[patients2include,idx_ighv], decreasing = F)]=="M")[1]-1,
-         show_rownames = F, legend = F, annotation_colors = annoHM_colors)
-dev.off()
+# pdf(file.path(plotdir,"heatmap_mRNA_IGHV_rotated.pdf"),width=7, height=8, onefile = F)
+# pheatmap(data$mRNA[rev(topGenes), patients2include[order(Z[patients2include, idx_ighv])] ],
+#          show_colnames = F, cluster_rows = F, cluster_cols = F,
+#          fontsize = 18, annotation_col = anno_df, annotation_legend = F,
+#          gaps_col = which(ZIGHV[order(Z[patients2include,idx_ighv], decreasing = F)]=="M")[1]-1,
+#          show_rownames = F, legend = F, annotation_colors = annoHM_colors)
+# dev.off()
 
+# heatmap
 pdf(file.path(plotdir,"heatmap_mRNA_IGHV_rotated2.pdf"),width=7, height=8, onefile = F)
 pheatmap(data$mRNA[topGenes, patients2include[order(Z[patients2include, idx_ighv])] ], show_colnames = F, cluster_rows = F, cluster_cols = F, fontsize = 18, annotation_col = anno_df, annotation_legend = F, gaps_col = which(ZIGHV[order(Z[patients2include,idx_ighv], decreasing = F)]=="M")[1]-1,
          show_rownames = T, legend = T, annotation_colors = annoHM_colors)
 dev.off()
 
-pdf(file.path(plotdir,"heatmap_mRNA_IGHV_legend.pdf"),width=13, height=7, onefile = F)
-pheatmap(t(data$mRNA[topGenes, patients2include ]), show_rownames = F, cluster_cols = F, fontsize = 18, annotation_row = anno_df, annotation_legend = T)
-dev.off()
-```
-
-#Heatmap Meth
-```{r}
-methData <- data$Methylation
-methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
-pdf(file.path(plotdir, "Heatmap_Meth_small.pdf"), width = 10, height = 7, onefile = F)
-pheatmap(t(methData)[,order(apply(t(methData),2,var), decreasing = T)[1:100]],
-         annotation_row = anno_df,
-         show_rownames = F, show_colnames = F, main = "Clustering based on top variable methylation sites", annotation_legend =  F)
-dev.off()
-```
-
-
-# Drug Response curves
-```{r}
-source("plottingUtils.R")
-# for(drugnm in c("dasatinib", "ibrutinib", "AT13387", "AZD7762")){
-# pdf(file.path(plotdir, paste0("DrugResponseCurve_",drugnm,".pdf")), width = 7, height = 7, onefile = F)
-# p <- plotDrugResponseCurve(model, drugnm, groups = ZIGHV, groupnm = "predicted IGHV") 
-# p <- p + scale_color_manual(values = anno_colors$IGHV_predicted) 
-# print(p)
+#legend for factor
+# pdf(file.path(plotdir,"heatmap_mRNA_IGHV_legend.pdf"),width=13, height=7, onefile = F)
+# pheatmap(t(data$mRNA[topGenes, patients2include ]), show_rownames = F, cluster_cols = F, fontsize = 18, annotation_row = anno_df, annotation_legend = T)
 # dev.off()
-# }
+```
+
+
+# Drug Response Curves
+## Individual Drug Response curves
+```{r}
 for(drugnm in c("dasatinib", "AT13387", "ibrutinib")){
 pdf(file.path(plotdir, paste0("DrugResponseCurve_",drugnm,".pdf")), width = 4, height = 6, onefile = F)
 p <- plotDrugResponseCurve(model, drugnm, groups = ZIGHV, groupnm = "predicted IGHV")
@@ -509,10 +534,9 @@ p <- p + scale_color_manual(values = anno_colors$IGHV_predicted, labels=c("M-CLL
 print(p + theme(legend.position = "bottom"))
 dev.off()
 }
-
 ```
 
-##joint
+## 3(e) joint
 ```{r}
   data(conctab, package="pace")
   groups = ZIGHV
@@ -547,7 +571,17 @@ dev.off()
   
 ```
 
-# Survival
+```{r}
+sessionInfo()
+```
+
+# APPENDIX
+The following analysis is only exploratory and not used for the manuscript:
+```{r}
+knitr::opts_chunk$set(eval=FALSE, echo=FALSE)
+```
+
+## Missclassified Cases ?
 ```{r}
 survivalDataTTT <- as.matrix(patmeta[,c("T5","treatedAfter")])
 survivalDataTTT<- survivalDataTTT[!is.na(survivalDataTTT[,1]),]
@@ -570,7 +604,7 @@ survivalDF %<>% mutate(IGHV=ifelse(IGHV=="M",1, ifelse(IGHV=="U", 0, NA)),
 nrow(survivalDF)
 ```
 
-## 
+### Survival for miss-classified cases
 ```{r}
 survivalDF %<>% filter(grepl("clustered as", agreement))
 coxph(Surv(TTT.time, TTT.status) ~ IGHV, survivalDF)
@@ -591,7 +625,7 @@ ggplot(survivalDF, aes(x=IGHV,y=dtime, group=IGHV)) + geom_boxplot()
 ggplot(survivalDF, aes(x=ZIGHV,y=dtime, group=ZIGHV)) + geom_boxplot()
 ```
 
-##Kaplan Meier for missclassified cases only
+### Kaplan Meier for missclassified cases only
 ```{r}
 
   # KM for LF
@@ -648,7 +682,7 @@ coxph(Surv(survivalData) ~ ZI)
 ```
 
 
-# Drug Response for missclassified cases
+### Drug Response for missclassified cases
 ```{r, eval=F, echo=F}
 misclPats <-  intersect(rownames(df_clustering)[grepl("clustered as", df_clustering$agreement)], colnames(model@TrainData$Drugs)[apply(model@TrainData[["Drugs"]],2,function(p) !any(is.na(p)))])
 
@@ -667,9 +701,7 @@ misclPats <-  intersect(rownames(df_clustering)[grepl("clustered as", df_cluster
 
 ```
 
-#Other
-
-## Beeswarm Plot
+### Beeswarm Plot
 ```{r}
 avDrugs <- function(x) {
   sum <- sapply(seq(1,nrow(x),5), function(i) colMeans(x[i:(i+4),]))
@@ -711,7 +743,7 @@ print(p)
   
 ```
 
-## IGHV classification and drug response
+### IGHV classification and drug response
 On drug response the classification by Z is supported:
 ```{r, eval=F}
 drugData <-data$Drugs[grepl("dasatinib|ibrutinib|idelalisib", rownames(data$Drugs)),]
@@ -747,7 +779,7 @@ ggplot(filter(df_seldrugs, IGHV=="M"|IGHV=="U"), aes(x=ZIGHV, y=meanResponse)) +
   geom_boxplot(alpha=0.3) +ggtitle("Mean Response to dasatinib ibrutinib and idelalisib")
 ```
 
-## IGHV classification and doubling times
+### IGHV classification and doubling times
 On doubling times the classification by Z is not supported:
 
 ```{r, eval=F}
@@ -764,7 +796,7 @@ LDT$class <- paste(LDT$IGHV,LDT$ZIGHV, sep="_")
 ggplot(filter(LDT, IGHV=="M"|IGHV=="U"), aes(x=ZIGHV, y=doubling.time)) +geom_point() +facet_wrap(~IGHV) +geom_boxplot(alpha=0.3) +ggtitle("Doubling time")
 ```
 
-## IGHV classification and TTT
+### IGHV classification and TTT
 On TTT the classification by Z is not supported:
 ```{r, eval=F}
 survivalDataTTT <- as.matrix(patmeta[,c("T5","treatedAfter")])
@@ -775,7 +807,7 @@ df_TTT <- data.frame(TTT=survivalDataTTT[commonPats,], IGHV=IGHV[commonPats], ZI
 ggplot(filter(df_TTT, IGHV=="M"|IGHV=="U" & TTT.treatedAfter == 1), aes(x=ZIGHV, y=TTT.T5)) +geom_point() +facet_wrap(~IGHV) +geom_boxplot(alpha=0.3) +ggtitle("time to treatment")
 ```
 
-## Misclassified cases: Compare to continous IGHV
+### Misclassified cases: Compare to continous IGHV
 No use
 ```{r, eval=F}
 # df_clustering$agreed <- ifelse(grepl("disagreement", df_clustering$agreement), F, 
@@ -799,8 +831,5 @@ No use
 
 ```
 
-```{r}
-sessionInfo()
-```
 
 

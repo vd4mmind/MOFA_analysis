@@ -8,9 +8,7 @@ output:
 ---
 
 ```{r, message=F, warning=F}
-setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
-devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
-# library(MOFAtools)
+library(MOFAtools)
 library(dplyr)
 library(reshape2)
 library(pheatmap)
@@ -25,266 +23,86 @@ library(cowplot)
 ```
 
 # Get imported model and related data
-Prepared in CLL_import_technical.Rmd
+"out_import_technical.RData" prepared in CLL_import_technical.Rmd
 ```{r}
 load("out_import_technical.RData")
 
 #output path for plots
 plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_overview"
 if(!dir.exists(plotdir)) dir.create(plotdir)
+
+source("plottingUtils.R")
 ```
 
 # Variance explained per view and factor
 ```{r}
-pdf(file.path(plotdir, "R2.pdf"))
 r2out <- calculateVarianceExplained(model, orderFactorsbyR2 = T, showtotalR2 = T)
-dev.off()
 r2out
 ```
 
-Customized plotting
-```{r}
-fvar_mk <- r2out$R2PerFactor
-fvar_m <- r2out$R2Total
-orderFactorsbyR2 <-T
-showtotalR2 <- T
-factorsNonconst <- factorNames(model)[-1]      
-# Sort factors
-      fvar_mk_df <- reshape2::melt(fvar_mk, varnames=c("factor","view"))
-      fvar_mk_df$factor <- factor(fvar_mk_df$factor)
-      # hc <- hclust(dist(t(fvar_mk)))
-      fvar_mk_df$view <- factor(fvar_mk_df$view, levels = rev(c("Mutations", "mRNA", "Methylation", "Drugs")))
-      if(orderFactorsbyR2) {factor_order <- order(rowSums(fvar_mk), decreasing = T) 
-          } else factor_order <- rev(1:length(factorsNonconst))
-      fvar_mk_df$factor <- factor(fvar_mk_df$factor, levels = factorsNonconst[factor_order])
-     
-      # Plot 1: grid with the variance explained per factor in each view
-      hm <- ggplot(fvar_mk_df, aes(view,factor)) + 
-        geom_tile(aes(fill=value), color="black") +
-        guides(fill=guide_colorbar("R2")) +
-        scale_fill_gradientn(colors=c("gray97","darkblue"), guide="colorbar") +
-        ylab("Factors") +
-        theme(text = element_text(size=25),
-          # plot.margin = margin(5,5,5,5),
-          plot.title = element_text(hjust=0.5),
-          axis.text.x = element_text(angle=0, hjust=0, vjust=1, color="black", size=rel(1.3)),
-          axis.text.y = element_blank(),
-          axis.title.y = element_blank(),
-          axis.line = element_blank(),
-          axis.ticks =  element_blank(),
-          panel.background = element_blank()
-          )  + coord_flip()
-      
-      hm <- hm  + 
-      if (showtotalR2) {
-        guides(fill=guide_colorbar("R2"))
-      } else {
-        guides(fill=guide_colorbar("Residual R2")) 
-      } #+ ggtitle("Variance explained per factor") 
-        
-      # Plot 2: barplot with coefficient of determination (R2) per view
-      fvar_m_df <- data.frame(view=names(fvar_m), R2=fvar_m)
-      fvar_m_df$view <- factor(fvar_m_df$view, levels = colnames(fvar_mk)[hc$order])
-      
-      bplt <- ggplot( fvar_m_df, aes(x=view, y=R2)) + 
-        # ggtitle("Total variance explained per view") +
-        geom_bar(stat="identity", fill="deepskyblue4", width=0.9) +
-        xlab("") + ylab("R2") +
-        scale_y_continuous(expand=c(0.01,0.01)) +
-        theme(text = element_text(size=25),
-          plot.margin = unit(c(1,2.4,0,0), "cm"),
-          panel.background = element_blank(),
-          plot.title = element_text(size=17, hjust=0.5),
-          axis.ticks.y = element_blank(),
-          axis.text.x = element_text(angle=0, hjust=0, vjust=1, color="black", size=rel(1.3)),
-          #axis.title.y = element_blank(),
-          # axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)
-          # axis.text.x = element_text(size=12, color="black"),
-          # axis.title.x = element_text(size=13, color="black"),
-          axis.line = element_line(size=rel(1.0), color="black")
-            ) +coord_flip()
-      
-      # Join the two plots
-      # Need to fix alignment using e.g. gtable...
-      # gg_R2 <- gridExtra::arrangeGrob(hm, bplt, ncol=1, heights=c(length(factorsNonconst),7) )
-      # gg_R2 <- gridExtra::arrangeGrob(bplt, hm, ncol=1, heights=c(1/2,1/2) )
-      # gridExtra::grid.arrange(gg_R2)
-      
-      #p <- plot_grid(bplt, hm, align="h", nrow=1, rel_widths=c(2/5,3/5))
-      gg_legend <- get_legend(hm)
-      p <- plot_grid(hm+guides(fill=F),gg_legend,
-                     bplt + theme(axis.text.y = element_blank()),
-                     align="h", nrow=1, rel_widths=c(5/10,1/10, 4/10), axis="t")
 
-  # pdf(file.path(plotdir, "R2_flipped.pdf"), width=12)
-      # print(p)
-  # dev.off()
+## 2(b) Flipped R2 plot with spaces
+```{r}
+p <- plotFlippedR2(r2.out)
+
+pdf(file.path(plotdir, "R2_flipped.pdf"), width=12)
+print(p)
+dev.off()
 ```
 
 
-##with spaces
+
+
+# Lineplot 2(c): Weights on Mutations
+For small views: Direct inspection of weight. Here Mutations
 ```{r}
-fvar_mk <- r2out$R2PerFactor
-fvar_m <- r2out$R2Total
-orderFactorsbyR2 <-T
-showtotalR2 <- T
-factorsNonconst <- factorNames(model)[-1]      
-# Sort factors
-      fvar_mk_df <- reshape2::melt(fvar_mk, varnames=c("factor","view"))
-      fvar_mk_df$factor <- factor(fvar_mk_df$factor)
-      # hc <- hclust(dist(t(fvar_mk)))
-      fvar_mk_df$view <- factor(fvar_mk_df$view, levels = rev(c("Mutations", "mRNA", "Methylation", "Drugs")))
-      if(orderFactorsbyR2) {factor_order <- order(rowSums(fvar_mk), decreasing = T) 
-          } else factor_order <- rev(1:length(factorsNonconst))
-      fvar_mk_df$factor <- factor(fvar_mk_df$factor, levels = factorsNonconst[factor_order])
-     
-      ### THIS PART CHANGES
-fvar_mk_df$view <-factor(fvar_mk_df$view, levels = rev(levels(fvar_mk_df$view)))
-hm <- ggplot(fvar_mk_df, aes(factor, view)) +  facet_wrap(~view, scale="free_y", nrow=4)+
-  geom_tile(aes(fill=value), color="black") +
-  guides(fill=guide_colorbar("R2")) +
-  scale_fill_gradientn(colors=c("gray97","darkblue"), guide="colorbar") +
-  ylab("Factors")  +# coord_flip()+ 
-  theme_minimal() + 
-  theme(text = element_text(size=25),
-        # plot.margin = margin(5,5,5,5),
-        plot.title = element_text(hjust=0.5),
-        axis.text.x = element_text(angle=0, hjust=0.5, vjust=0, color="black", size=rel(1.3)),
-        axis.text.y = element_blank(),
-        # axis.text.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.line = element_blank(),
-        axis.ticks =  element_blank(),
-        panel.background = element_blank(),
-        strip.background = element_blank(),
-        strip.text.x = element_blank()
-   ) #+
-  # theme(axis.text.x=element_text(size=28, angle=90), axis.text.y=element_text(size=28)) + 
-  # labs(title="", x="", y="", fill="") 
-######
-
-
-      hm <- hm  + 
-      if (showtotalR2) {
-        guides(fill=guide_colorbar("R2"))
-      } else {
-        guides(fill=guide_colorbar("Residual R2")) 
-      } #+ ggtitle("Variance explained per factor") 
-        
-      # Plot 2: barplot with coefficient of determination (R2) per view
-      fvar_m_df <- data.frame(view=names(fvar_m), R2=fvar_m)
-      fvar_m_df$view <- factor(fvar_m_df$view, levels = colnames(fvar_mk)[hc$order])
-      
-      bplt <- ggplot( fvar_m_df, aes(x=view, y=R2)) + 
-        # ggtitle("Total variance explained per view") +
-        geom_bar(stat="identity", fill="deepskyblue4", width=0.9) +
-        xlab("") + ylab("R2") +
-        scale_y_continuous(expand=c(0.01,0.01)) +
-        theme(text = element_text(size=25),
-          plot.margin = unit(c(1,2.4,0,0), "cm"),
-          panel.background = element_blank(),
-          plot.title = element_text(size=17, hjust=0.5),
-          axis.ticks.y = element_blank(),
-          axis.text.x = element_text(angle=0, hjust=0, vjust=1, color="black", size=rel(1.3)),
-          #axis.title.y = element_blank(),
-          # axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)
-          # axis.text.x = element_text(size=12, color="black"),
-          # axis.title.x = element_text(size=13, color="black"),
-          axis.line = element_line(size=rel(1.0), color="black")
-            ) +coord_flip()
-      
-      # Join the two plots
-      # Need to fix alignment using e.g. gtable...
-      # gg_R2 <- gridExtra::arrangeGrob(hm, bplt, ncol=1, heights=c(length(factorsNonconst),7) )
-      # gg_R2 <- gridExtra::arrangeGrob(bplt, hm, ncol=1, heights=c(1/2,1/2) )
-      # gridExtra::grid.arrange(gg_R2)
-      
-      #p <- plot_grid(bplt, hm, align="h", nrow=1, rel_widths=c(2/5,3/5))
-      gg_legend <- get_legend(hm)
-      p <- plot_grid(hm+guides(fill=F),gg_legend,
-                     bplt + theme(axis.text.y = element_blank()),
-                     align="h", nrow=1, rel_widths=c(5/10,1/10, 4/10), axis="t")
-
-  pdf(file.path(plotdir, "R2_flipped.pdf"), width=12)
-      print(p)
-  dev.off()
-```
-
-# Scatterplot of two most important facotrs
-```{r}
-pdf(file.path(plotdir,"ScatterPlot_IGHV_tr12.pdf"), width = 6, height = 5, useDingbats=F)
-df = data.frame(x = Z[, "1"], y = Z[,"2"], 
-                trisomy12 = covariates$trisomy12,
-                IGHV = covariates$IGHV)
-df$trisomy12[is.na(df$trisomy12)] <- "missing" 
-df$IGHV[is.na(df$IGHV)] <- "missing" 
-df$trisomy12[df$trisomy12 == "0"] <- "wt" 
-df$trisomy12[df$trisomy12 == "1"] <- "mut" 
-df$trisomy12 <- factor(df$trisomy12, levels=c("wt", "mut", "missing"))
-
-df$IGHV[df$IGHV == "0"] <- "U" 
-df$IGHV[df$IGHV == "1"] <- "M" 
-df$IGHV <- factor(df$IGHV, levels=c("U", "M", "missing"))
-
-
-titlesize <- 15
-ggplot(df, aes(x=x, y=y, col=IGHV,shape=trisomy12)) + geom_point(size=2.5)  +
-      theme(plot.margin = margin(20, 20, 10, 10), 
-            axis.text = element_text(size = rel(1), color = "black"), 
-            axis.title = element_text(size = titlesize), 
-            axis.title.y = element_text(size = rel(1.1), margin = margin(0, 10, 0, 0)), 
-            axis.title.x = element_text(size = rel(1.1), margin = margin(10, 0, 0, 0)), 
-            axis.line = element_line(color = "black", size = 0.5), 
-            axis.ticks = element_line(color = "black", size = 0.5),
-            panel.border = element_blank(), 
-            panel.grid.major = element_blank(),
-            panel.grid.minor = element_blank(), 
-            panel.background = element_blank(),
-            legend.key = element_rect(fill = "white"),
-            legend.text = element_text(size = titlesize),
-            legend.title = element_text(size =titlesize)) +
-  scale_shape_manual(values=c(17,3,23)) +
-  scale_color_manual(values=c("cyan4", "brown3", "grey")) +
-  guides(colour = guide_legend(override.aes = list(shape = 19)),
-         shape = guide_legend(title="Trisomy 12")) +
-    xlab("Factor 1") +
-   ylab("Factor 2")
-
-# scatterPlot(model, c("4", "5"), 
-#             color_by = as.factor(covariates$IGHV), name_color = "IGHV",
-#             shape_by = covariates$trisomy12, name_shape = "Trisomy 12")
+# Mutation weights on factor 1
+pdf(file.path(plotdir,"MutWeights_1.pdf"), width = 4.4, height=3)
+showTopWeightsAndColor(model, "Mutations", "1" , nfeatures = 5, abs=T, Features2color = "IGHV", col2highlight = "red", maxL = 1, scalePerView=T)
 dev.off()
 
+# Mutation weights on factor 2
+# rename del13q14, this is now taken care of in input, only used for old model
+MOFAtools::featureNames(model)$Mutations[MOFAtools::featureNames(model)$Mutations=="del13q14_any"] <- "del13q14"
 
+pdf(file.path(plotdir,"MutWeights_2.pdf"), width = 4.4, height=3)
+showTopWeightsAndColor(model, "Mutations", "2" , nfeatures = 5, abs=T, Features2color = "trisomy12",
+                       maxL = 1, scalePerView=T)
+dev.off()
 ```
 
-
-## Scatterplot of two most important facotrs - bicolor
+# Scatterplot 2(d) of two most important facotrs - bicolor
 ```{r}
-pdf(file.path(plotdir,"ScatterPlot_IGHV_tr12_bicolor.pdf"), width = 5.5, height = 6, useDingbats=F)
+# collect data for plot
 df = data.frame(x = Z[, "1"], y = Z[,"2"], 
                 trisomy12 = covariates$trisomy12,
                 IGHV = covariates$IGHV)
+
+# nice names for tr 12
 df$trisomy12[is.na(df$trisomy12)] <- "missing" 
-df$IGHV[is.na(df$IGHV)] <- "missing" 
 df$trisomy12[df$trisomy12 == "0"] <- "wt" 
 df$trisomy12[df$trisomy12 == "1"] <- "tr12" 
 df$trisomy12 <- factor(df$trisomy12, levels=c("wt", "tr12", "missing"))
 
+# nice names for IGHV
+df$IGHV[is.na(df$IGHV)] <- "missing" 
 df$IGHV[df$IGHV == "0"] <- "U" 
 df$IGHV[df$IGHV == "1"] <- "M" 
 df$IGHV <- factor(df$IGHV, levels=c("U", "M", "missing"))
 
+# nice names for comi
 df$IGHV_tr12 <- paste(df$IGHV, df$trisomy12, sep="-CLL, ")
 df %<>% mutate(IGHV_tr12= ifelse(grepl("missing", IGHV_tr12), "missing",IGHV_tr12))
+
+# colors and shapes for plot
 Paircolorr <- c(RColorBrewer::brewer.pal(6, "Paired")[c(1:2,5:6)], "grey")
 Shapes4plot <- c(17,19,17,19, 3)
 names(Shapes4plot) <- names(Paircolorr) <- c("U-CLL, wt", "U-CLL, tr12", "M-CLL, wt", "M-CLL, tr12", "missing")
 df$IGHV_tr12 <- factor(df$IGHV_tr12, levels=names(Paircolorr))
 
+# make plot
 titlesize <- 15
-# ggplot(df, aes(x=x, y=y, col=IGHV,shape=trisomy12)) + geom_point(size=2.5)  +
-  ggplot(df, aes(x=x, y=y, col=IGHV_tr12,shape=IGHV_tr12)) + geom_point(size=2.5)  +
+gg <-  ggplot(df, aes(x=x, y=y, col=IGHV_tr12,shape=IGHV_tr12)) + geom_point(size=2.5)  +
       theme(plot.margin = margin(20, 20, 10, 10), 
             axis.text = element_text(size = rel(1), color = "black"), 
             axis.title = element_text(size = titlesize), 
@@ -299,109 +117,21 @@ titlesize <- 15
             legend.key = element_rect(fill = "white"),
             legend.text = element_text(size = titlesize),
             legend.title = element_blank(),
-            legend.position = "bottom") +
+            legend.position = "top") +
   scale_shape_manual(name = "Mutational status", labels= names(Shapes4plot), values=Shapes4plot) +
-  # scale_color_manual(values=c("cyan4", "brown3", "grey")) +
   scale_color_manual(name = "Mutational status", labels= names(Paircolorr), values=Paircolorr) +
-   guides(colour = guide_legend(ncol=3), 
-          shape = guide_legend(ncol=3)) +
-    xlab("Factor 1") +
-   ylab("Factor 2") 
+   guides(colour = guide_legend(ncol=3), shape = guide_legend(ncol=3)) +
+    xlab("Factor 1") + ylab("Factor 2") 
 
-# scatterPlot(model, c("4", "5"), 
-#             color_by = as.factor(covariates$IGHV), name_color = "IGHV",
-#             shape_by = covariates$trisomy12, name_shape = "Trisomy 12")
-dev.off()
-
-
-```
-
-## Scatterplot of two most important facotrs - colorful
-```{r}
-pdf(file.path(plotdir,"ScatterPlot_IGHV_tr12_colorful.pdf"), width = 6, height = 5, useDingbats=F)
-df = data.frame(x = Z[, "1"], y = Z[,"2"], 
-                trisomy12 = covariates$trisomy12,
-                IGHV = covariates$IGHV)
-df$trisomy12[is.na(df$trisomy12)] <- "missing" 
-df$IGHV[is.na(df$IGHV)] <- "missing" 
-df$trisomy12[df$trisomy12 == "0"] <- "wt" 
-df$trisomy12[df$trisomy12 == "1"] <- "mut" 
-df$trisomy12 <- factor(df$trisomy12, levels=c("wt", "mut", "missing"))
-
-df$IGHV[df$IGHV == "0"] <- "U" 
-df$IGHV[df$IGHV == "1"] <- "M" 
-df$IGHV <- factor(df$IGHV, levels=c("U", "M", "missing"))
-
-df$IGHV_tr12 <- paste(df$IGHV, df$trisomy12, sep="-CLL - tr12-")
-df %<>% mutate(IGHV_tr12= ifelse(grepl("missing", IGHV_tr12), "missing",IGHV_tr12))
-Paircolorr <- c("cornflowerblue", "cyan4", "brown4", "orange", "grey")
-Shapes4plot <- c(19,19,19,19, 21)
-names(Shapes4plot) <- names(Paircolorr) <- c("U-CLL - tr12-wt", "U-CLL - tr12-mut", "M-CLL - tr12-wt", "M-CLL - tr12-mut", "missing")
-df$IGHV_tr12 <- factor(df$IGHV_tr12, levels=names(Paircolorr))
-
-titlesize <- 15
-# ggplot(df, aes(x=x, y=y, col=IGHV,shape=trisomy12)) + geom_point(size=2.5)  +
-  ggplot(df, aes(x=x, y=y, col=IGHV_tr12,shape=IGHV_tr12)) + geom_point(size=2.5)  +
-      theme(plot.margin = margin(20, 20, 10, 10), 
-            axis.text = element_text(size = rel(1), color = "black"), 
-            axis.title = element_text(size = titlesize), 
-            axis.title.y = element_text(size = rel(1.1), margin = margin(0, 10, 0, 0)), 
-            axis.title.x = element_text(size = rel(1.1), margin = margin(10, 0, 0, 0)), 
-            axis.line = element_line(color = "black", size = 0.5), 
-            axis.ticks = element_line(color = "black", size = 0.5),
-            panel.border = element_blank(), 
-            panel.grid.major = element_blank(),
-            panel.grid.minor = element_blank(), 
-            panel.background = element_blank(),
-            legend.key = element_rect(fill = "white"),
-            legend.text = element_text(size = titlesize),
-            legend.title = element_text(size =titlesize)) +
-  scale_shape_manual(name = "Mutational status", labels= names(Shapes4plot), values=Shapes4plot) +
-  # scale_color_manual(values=c("cyan4", "brown3", "grey")) +
-  scale_color_manual(name = "Mutational status", labels= names(Paircolorr), values=Paircolorr) +
-  # guides(colour = guide_legend(override.aes = list(shape = 19)), 
-         # shape = guide_legend(title="Trisomy 12")) +
-    xlab("Factor 1") +
-   ylab("Factor 2")
-
-# scatterPlot(model, c("4", "5"), 
-#             color_by = as.factor(covariates$IGHV), name_color = "IGHV",
-#             shape_by = covariates$trisomy12, name_shape = "Trisomy 12")
-dev.off()
-
-
-```
-
-
-#For small views: Direct inspection of weight
-```{r, echo=FALSE}
-source("plottingUtils.R")
-```
-
-
-Show weights of facotrs
-```{r}
-# showWeightHeatmap(model, "Mutations")
-# showWeightHeatmap(model, "mRNA")
-# showWeightHeatmap(model, "Drugs")
-# showWeightHeatmap(model, "Methylation",show_rownames = F)
-
-# Mutation weights on factor 1
-pdf(file.path(plotdir,"MutWeights_1.pdf"), width = 5.5, height=4)
-showTopWeightsAndColor(model, "Mutations", "1" , nfeatures = 5, abs=T, Features2color = "IGHV", col2highlight = "red", maxL = 1, scalePerView=T)
-dev.off()
-
-# Mutation weights on factor 2
-pdf(file.path(plotdir,"MutWeights_2.pdf"), width = 5.5, height=4)
-showTopWeightsAndColor(model, "Mutations", "2" , nfeatures = 5, abs=T, Features2color = "trisomy12",
-                       maxL = 1, scalePerView=T)
+# save to pdf
+pdf(file.path(plotdir,"ScatterPlot_IGHV_tr12_bicolor.pdf"), width = 5.5, height = 6, useDingbats=F)
+print(gg)
 dev.off()
 ```
 
-# For large views if feautre sets are known (e.g. mRNA) calculate enrichment
+# Enrichment Analysis
 
 ## Reactome Gene Set
-
 Get gene set annotations
 ```{r}
 # Get reactome gene sets
@@ -423,7 +153,7 @@ if(!all(grepl("ENS", featureNames(model)$mRNA)))
   MOFAtools::featureNames(model)$mRNA <- mRNA$ens_id[match(MOFAtools::featureNames(model)$mRNA, mRNA$symbol)]
 ```
 
-### Parametric approach
+## Parametric approach
 ```{r}
 gsea.outParam <- FeatureSetEnrichmentAnalysis(model, "mRNA", reactomceGS, statistical.test = "cor.adj.parametric",
                                               alpha = 0.1, min.size = 15)
@@ -432,30 +162,37 @@ gsea.outParam_nonadj <- FeatureSetEnrichmentAnalysis(model, "mRNA", reactomceGS,
 
 ```
 
-### Permutation approach
+## Permutation approach
 ```{r, fig.width= 12}
-if(!file.exists("gsea.out_perm_17Aug.RData")){
+if(!file.exists("gsea.out_perm.RData")){
 gsea.outPerm <- FeatureSetEnrichmentAnalysis(model, "mRNA", reactomceGS, statistical.test = "permutation", alpha = 0.1,
                                              nperm = 1000, min.size = 15)
 save(gsea.outPerm, file="gsea.out_perm_10Aug.RData")
-} else load("gsea.out_perm_17Aug.RData")
+} else load("gsea.out_perm.RData")
 ```
 
-### GSE results
+## GSE results
+### Inspection
 ```{r}
-sapply(gsea.outPerm$sigPathways2, length)
 sapply(gsea.outPerm$sigPathways, length)
-sapply(gsea.outParam$sigPathways2, length)
-sapply(gsea.outParam_nonadj$sigPathways2, length)
+sapply(gsea.outParam$sigPathways, length)
+sapply(gsea.outParam_nonadj$sigPathways, length)
 
 hist(gsea.outParam$pval)
 hist(gsea.outPerm$pval)
 hist(gsea.outParam_nonadj$pval)
+```
 
+We use non-adjusted parametric test in the following:
+
+```{r}
 # choose test to use 
 gsea.out <- gsea.outParam_nonadj
-names(gsea.out$sigPathways2) <- colnames(Z)[-1]
+names(gsea.out$sigPathways) <- colnames(Z)[-1]
+```
 
+### Manual categories
+```{r}
 #broader categories
 label_pathway <- function(x){
   ifelse(grepl("[s|S]tress|HSF|[S|s]enescence|[T|t]elomer|Attenuation phase", x), "stress_aging",
@@ -464,52 +201,51 @@ label_pathway <- function(x){
 }
 categories <- sapply(rownames(reactomceGS), label_pathway)
 
+# write categories to .csv files
 write.csv(file=file.path(plotdir,"stress_aging.csv"),names(categories[which(categories=="stress_aging")]))
 write.csv(file=file.path(plotdir,"ImmuneResponse.csv"),names(categories[which(categories=="ImmuneResponse")]))
 write.csv(file=file.path(plotdir,"RNA_regulation.csv"),names(categories[which(categories=="RNA_regulation")]))
 write.csv(file=file.path(plotdir,"other.csv"),names(categories[which(categories=="other")]))
 
-names(categories[which(categories=="stress_aging")])
-names(categories[which(categories=="ImmuneResponse")])
-names(categories[which(categories=="RNA_regulation")])
-names(categories[which(categories=="other")])
-
-
+# color definition
 col4Pathways <- c("other"="gray", "cellular stress/senescence"="cyan", "RNA regulation"="navy", "Immune Response"="forestgreen")
 nicelabels <- c(other="other", stress_aging="cellular stress/senescence",ImmuneResponse="Immune Response",RNA_regulation="RNA regulation" )
+```
 
-pathwaysDF <- melt(gsea.out$sigPathways2, value.name="pathway")
+### 2(e) Bar plot
+```{r}
+pathwaysDF <- melt(gsea.out$sigPathways, value.name="pathway")
 colnames(pathwaysDF) <- c("pathway", "factor")
 pathwaysDF %<>% mutate(type=label_pathway(pathway))
-
+# summarize per factor
 pathwaysSummary <- pathwaysDF %>% dplyr::group_by(factor) %>%
-  dplyr::summarise(other = sum(type=="other"), stress_aging=sum(type=="stress_aging"), ImmuneResponse = sum(type == "ImmuneResponse"),
-            RNA_regulation = sum(type=="RNA_regulation"))
-pathwaysSummary <- rbind(pathwaysSummary, data.frame(factor = colnames(Z)[-1][!colnames(Z)[-1] %in% pathwaysSummary$factor],
+  dplyr::summarise(other = sum(type=="other"), stress_aging=sum(type=="stress_aging"),
+                   ImmuneResponse = sum(type == "ImmuneResponse"),
+                   RNA_regulation = sum(type=="RNA_regulation"))
+# add factors without enrichment
+pathwaysSummary <- rbind(pathwaysSummary, 
+                         data.frame(factor = colnames(Z)[-1][!colnames(Z)[-1] %in% pathwaysSummary$factor],
                                                      other = 0, stress_aging=0, ImmuneResponse=0, RNA_regulation=0))
+
 pathwaysSummary <-  melt(pathwaysSummary, id.vars = "factor", variable.name = "type", value.name = "count")
 pathwaysSummary$factor <- factor(pathwaysSummary$factor, levels = 1:10)
-
 pathwaysSummary %<>% mutate(type=as.character(nicelabels[type]))
 pathwaysSummary$type <- factor(pathwaysSummary$type, levels=rev(as.character(nicelabels)))
 
-pdf(file.path(plotdir,"GeneSetsOverview.pdf"), width = 4.5, height = 5)
+#plot
+pdf(file.path(plotdir,"GeneSetsOverview.pdf"), width = 4, height = 6)
 ggplot(pathwaysSummary, aes(x=factor, y=count, fill=type)) +
   geom_bar(stat="identity") +coord_flip() + 
   ylab("Enriched gene sets at FDR 1%") +
   xlab("Factor") + #guides(fill=F) +
   scale_fill_manual(values=col4Pathways) +
   theme(legend.position = "bottom") +
-  guides(fill=guide_legend(title="",nrow=2))
+  guides(fill=guide_legend(title="",nrow=4))
 dev.off()
+```
 
-# pdf(file.path(plotdir,"GeneSetsOverview.pdf"), width = 4, height = 5)
-# barplot(sapply(gsea.outParam$sigPathways2, length, fill= paste(factor, )), horiz = T,
-#         main="Enriched gene sets in mRNA loadings", col=1:10, las=2, 
-#         xlab = "Enriched gene sets at FDR 10%",
-#         ylab= "Factor")
-# dev.off()
-
+### Point jitter plot of p-values
+```{r}
 pval.adj <- gsea.out$pval.adj
 pDF <- melt(pval.adj, value.name = "p.adj", varnames = c("pathway", "factor"))
 pDF %<>% filter(paste0(pathway, factor) %in% apply(pathwaysDF[,c("pathway", "factor")],1,paste0, collapse=""))
@@ -518,17 +254,6 @@ pDF %<>% filter(paste0(pathway, factor) %in% apply(pathwaysDF[,c("pathway", "fac
 pDF %<>% mutate(type=label_pathway(pathway))
 pDF %<>% mutate(type=as.character(nicelabels[type]))
 pDF$type <- factor(pDF$type, levels=rev(as.character(nicelabels)))
-
-#does not work if a pathway is on several factors
-# pDF %<>% mutate(pathway=factor(pathway, level=pathway[order(padj, decreasing=T)]))
-
-# 
-# pdf(file.path(plotdir,"GeneSetsOverview_heatmap.pdf"), width = 4, height = 5)
-# ggplot(pDF, aes(x=factor, y=pathway, fill=type))+geom_tile() +
-#   theme(axis.text.x = element_blank()) + coord_flip() +
-#   scale_fill_manual(values=c(other="gray", stress="cyan", TCR="navy", TLR="forestgreen", Interleukin="orange")) +
-#   ylab("Enriched pathway at FDR of 10%")
-# dev.off()
 
 pdf(file.path(plotdir,"GeneSetsOverview_points.pdf"), width = 4.5, height = 5)
 ggplot(pDF, aes(x=as.factor(factor), y=-log10(p.adj), col=type))+geom_jitter(aes(alpha=type),width = 0.1, height = 0, size=2) +
@@ -539,9 +264,13 @@ ggplot(pDF, aes(x=as.factor(factor), y=-log10(p.adj), col=type))+geom_jitter(aes
   guides(col=guide_legend(title="",nrow=2), alpha=F) +
   scale_alpha_manual(values=c(other=0.4, 0.8,0.8,0.8))
 dev.off()
+```
 
+
+### Line plots per factor
+```{r}
 pvalsadj <- gsea.out$pval.adj
-NsigP <- sapply(gsea.out$sigPathways2, length)
+NsigP <- sapply(gsea.out$sigPathways, length)
 for(i in factorNames(model)[-1]){
 if(NsigP[i]>0){
 pdf(file.path(plotdir,paste0("GeneSetsPerFactor_",i,".pdf")), width = 12, height = 5+NsigP[i]/4, useDingbats = T)

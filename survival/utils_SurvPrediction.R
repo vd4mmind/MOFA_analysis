@@ -1,3 +1,4 @@
+# contains useful function for survival predicition
 
 #lasso cox regression and C index calculation
 LassoHarrellsC <- function(response.survival, design, cv_ix,ncv=10, nfolds=3, nfolds.Hc=NULL){

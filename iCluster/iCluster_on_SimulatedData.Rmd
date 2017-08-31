@@ -17,7 +17,7 @@ library(pheatmap)
 library(gridExtra)
 ```
 
-
+# I/O Options
 ```{r}
 in.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/data/"
 iClfit.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/iCluster_results/centered_results/"
@@ -25,7 +25,7 @@ MOFAfit.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4man
 plotdir <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Figures_iCluster/"
 ```
 
-Load simulated data
+# Load simulated data
 ```{r}
 files <- list.files(in.folder, pattern=".txt$")
 
@@ -55,7 +55,7 @@ simData[grepl("m[0-2]", names(simData))] <- lapply(simData[grepl("m[0-2]", names
 
 ```
 
-Run iCluster (done on server)
+# Run iCluster (done on server)
 ```{r, eval=F}
 # # fit iCluster model
 # for(k in unique(kvec)){
@@ -69,7 +69,7 @@ Run iCluster (done on server)
 # }
 ```
 
-Load fitted models (iCluster)
+# Load fitted models (iCluster)
 ```{r}
 iCluster.out <- lapply(unique(kvec), function(k) {
   load(file.path(iClfit.folder,paste("iclustertuned.out",k,".RData", sep="")))
@@ -78,13 +78,13 @@ iCluster.out <- lapply(unique(kvec), function(k) {
 names(iCluster.out) <- unique(kvec)
 ```
 
-Load fitted models (MOFA)
+# Load fitted models (MOFA)
 ```{r}
 MOFA.out <- lapply(unique(kvec), function(k) loadModel(file.path(MOFAfit.folder,paste("0_",k,".hdf5", sep=""))))
 names(MOFA.out) <- unique(kvec)
 ```
 
-True alpha
+# True alpha
 ```{r}
 alpha <- simData[grepl("alpha", names(simData))]
 names(alpha) <- sub("k","",sapply(strsplit(names(alpha), "_"), "[[",1))
@@ -196,8 +196,8 @@ calculateVarianceExplained4iClust <- function(iCl_fit, k=NULL, data, plotit=T, p
 }
 ```
 
-
-```{r}
+Function to plot R2:
+```{r, echo=F}
 plotR2 <- function(fvar_mk, title="") { 
   
       
@@ -254,9 +254,11 @@ plotR2 <- function(fvar_mk, title="") {
 }
 ```
 
-Comparison of variacen explained plots
+# Comparison of variacen explained plots
 ```{r}
 for(i in seq_along(iCluster.out)){
+
+# get R2 and re-order factors by number of active views:  
 r2out_iClust <- calculateVarianceExplained4iClust(iCluster.out[[i]], data = simData, orderFactorsbyR2 = T)
 r2out_iClust$R2PerFactor <- r2out_iClust$R2PerFactor[order(colSums(c(101,102,103)*t(r2out_iClust$R2PerFactor>0.05))),]
 r2out_MOFA <- calculateVarianceExplained(MOFA.out[[i]], orderFactorsbyR2 = T, plotit = F)
@@ -266,15 +268,18 @@ r2MOFA <- r2out_MOFA$R2PerFactor
 colnames(r2MOFA) <- 0:2
 r2iCluster <- r2out_iClust$R2PerFactor
 colnames(r2iCluster) <- 0:2
+
+# get true pattern
 truepattern <- t(1/alpha[[i]])
 truepattern <- truepattern[order(colSums(c(101,102,103)*t(truepattern>0.05)), decreasing = F),]
 colnames(truepattern) <- 0:2
 
-
+# make plots
 gg_iCluster <- plotR2(r2iCluster, title = "iCluster")
 gg_MOFA <- plotR2(r2MOFA, title = "MOFA")
 gg_truth <- plotR2(truepattern, title = "ground truth")
 
+# save
 pdf(file.path(plotdir, paste("iClusterComparison_k_centered", names(iCluster.out)[i], ".pdf", sep="" )), width=10, height=2+as.numeric(names(iCluster.out)[i])/10)
 grid.arrange(gg_truth, gg_MOFA, gg_iCluster , ncol=3, top =paste("k =", names(iCluster.out)[i]))
 dev.off()

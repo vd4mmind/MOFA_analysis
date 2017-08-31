@@ -1,3 +1,14 @@
+# contains helper functions for plots in the CLL analysis
+
+
+get_legend<-function(gg){
+  tmp <- ggplot_gtable(ggplot_build(gg))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+
 showTopWeightsAndColor <- function(model, view, factor, nfeatures = 5,
                                    manual_features=NULL, sign="positive", abs=TRUE,
                                    Features2color=NULL, col2highlight="red", maxL=NULL,
@@ -91,4 +102,102 @@ plotDrugResponseCurve <- function(model, drugnm, groups=NULL, groupnm=""){
   if(is.null(groups)) p <- p + guides(col=F) else p <- p + guides(col=guide_legend(title =groupnm))
   # print(p)
   return(p)
+}
+
+plotFlippedR2 <- function(r2.out, orderFactorsbyR2= TRUE, showtotalR2 = TRUE, horizontalSpaces = TRUE){
+  
+  fvar_mk <- r2out$R2PerFactor
+  fvar_m <- r2out$R2Total
+
+factorsNonconst <- factorNames(model)[-1]      
+# Sort factors
+      fvar_mk_df <- reshape2::melt(fvar_mk, varnames=c("factor","view"))
+      fvar_mk_df$factor <- factor(fvar_mk_df$factor)
+      fvar_mk_df$view <- factor(fvar_mk_df$view, levels = rev(c("Mutations", "mRNA", "Methylation", "Drugs")))
+      if(orderFactorsbyR2) {factor_order <- order(rowSums(fvar_mk), decreasing = T) 
+          } else factor_order <- rev(1:length(factorsNonconst))
+      fvar_mk_df$factor <- factor(fvar_mk_df$factor, levels = factorsNonconst[factor_order])
+     
+      if(horizontalSpaces){
+fvar_mk_df$view <-factor(fvar_mk_df$view, levels = rev(levels(fvar_mk_df$view)))
+hm <- ggplot(fvar_mk_df, aes(factor, view)) +  facet_wrap(~view, scale="free_y", nrow=4)+
+  geom_tile(aes(fill=value), color="black") +
+  guides(fill=guide_colorbar(parse(text='R^2'))) +
+  scale_fill_gradientn(colors=c("gray97","darkblue"), guide="colorbar") +
+  xlab("Factor")  +# coord_flip()+ 
+  theme_minimal() + 
+  theme(text = element_text(size=25),
+        # plot.margin = margin(5,5,5,5),
+        plot.title = element_text(hjust=0.5),
+        axis.text.x = element_text(angle=0, hjust=0.5, vjust=0, color="black", size=rel(1.3)),
+        axis.text.y = element_blank(),
+        # axis.text.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks =  element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_blank(),
+        strip.text.x = element_blank()
+   ) 
+} else {
+  hm <- ggplot(fvar_mk_df, aes(view,factor)) + 
+        geom_tile(aes(fill=value), color="black") +
+        guides(fill=guide_colorbar("R2")) +
+        scale_fill_gradientn(colors=c("gray97","darkblue"), guide="colorbar") +
+        ylab("Factors") +
+        theme(text = element_text(size=25),
+          # plot.margin = margin(5,5,5,5),
+          plot.title = element_text(hjust=0.5),
+          axis.text.x = element_text(angle=0, hjust=0, vjust=1, color="black", size=rel(1.3)),
+          axis.text.y = element_blank(),
+          axis.title.y = element_blank(),
+          axis.line = element_blank(),
+          axis.ticks =  element_blank(),
+          panel.background = element_blank()
+          )  + coord_flip()
+}
+
+      hm <- hm  + 
+      if (showtotalR2) {
+        guides(fill=guide_colorbar("R2"))
+      } else {
+        guides(fill=guide_colorbar("Residual R2")) 
+      } #+ ggtitle("Variance explained per factor") 
+
+        
+      # Plot 2: barplot with coefficient of determination (R2) per view
+      fvar_m_df <- data.frame(view=names(fvar_m), R2=fvar_m)
+      fvar_m_df$view <- factor(fvar_m_df$view, levels = rev(c("Mutations", "mRNA", "Methylation", "Drugs")))
+      
+      bplt <- ggplot( fvar_m_df, aes(x=view, y=R2)) + 
+        # ggtitle("Total variance explained per view") +
+        geom_bar(stat="identity", fill="deepskyblue4", width=0.9) +
+        xlab("") + ylab(parse(text='R^2')) +
+        scale_y_continuous(expand=c(0.01,0.01)) +
+        theme(text = element_text(size=25),
+          plot.margin = unit(c(1,2.4,0,0), "cm"),
+          panel.background = element_blank(),
+          plot.title = element_text(size=17, hjust=0.5),
+          axis.ticks.y = element_blank(),
+          axis.text.x = element_text(angle=0, hjust=0, vjust=1, color="black", size=rel(1.3)),
+          #axis.title.y = element_blank(),
+          # axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)
+          # axis.text.x = element_text(size=12, color="black"),
+          # axis.title.x = element_text(size=13, color="black"),
+          axis.line = element_line(size=rel(1.0), color="black")
+            ) +coord_flip()
+      
+      # Join the two plots
+      # Need to fix alignment using e.g. gtable...
+      # gg_R2 <- gridExtra::arrangeGrob(hm, bplt, ncol=1, heights=c(length(factorsNonconst),7) )
+      # gg_R2 <- gridExtra::arrangeGrob(bplt, hm, ncol=1, heights=c(1/2,1/2) )
+      # gridExtra::grid.arrange(gg_R2)
+      
+      #p <- plot_grid(bplt, hm, align="h", nrow=1, rel_widths=c(2/5,3/5))
+      gg_legend <- get_legend(hm)
+      p <- plot_grid(hm+guides(fill=F),gg_legend,
+                     bplt + theme(axis.text.y = element_blank()),
+                     align="h", nrow=1, rel_widths=c(5/10,1/10, 4/10), axis="t")
+
+      return(p)
 }

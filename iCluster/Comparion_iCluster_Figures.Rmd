@@ -8,8 +8,7 @@ output:
 ---
 
 ```{r, warning=F, message=F}
-setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/clustering/")
-devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
+library(MOFAtools)
 library(dplyr)
 library(reshape2)
 library(pheatmap)
@@ -19,14 +18,15 @@ library(survival)
 library(cowplot)
 ```
 
+```{r}
+knitr::opts_chunk$set(fig.width = 5, fig.height = 5)
+```
+
 # MOFA model
 ```{r}
 modelDir <- "~/Documents/MOFA/CLL_MOFA_data/out/common4iCluster/"
 modelFiles <- list.files(modelDir)
 MOFAmodels <- lapply(modelFiles, function(modelnm) loadModel(file.path(modelDir, modelnm), sortFactors = T))
-# MOFAmodels <- lapply(MOFAmodels, function(model) {
-#   factorNames(model) <- paste(factorNames(model), "MOFA", sep="_")
-#   model})
 names(MOFAmodels) <- sapply(modelFiles, function(nm) sub(".hdf5","",strsplit( nm,"_")[[1]][2]))
 
 ZMOFA <- lapply(MOFAmodels, function(model) {
@@ -39,7 +39,6 @@ weightsMOFA <- lapply(MOFAmodels, function(model) {
  getExpectations(model, "SW", "E")
   })
 names(weightsMOFA) <- names(MOFAmodels) 
-
 ```
 
 # Data
@@ -123,15 +122,15 @@ names(weightsPlusInterceptiClust) <- names(weightsiClust)
 # Correlation
 ```{r corrplots, fig.path="fig/", dev=c("pdf", "png")}
 for(k in c(5,10,15)){
-  corrplot::corrplot(cor(ZMOFA[[paste0("k",k)]]))
-  corrplot::corrplot(cor(ZiClust[[paste0("k",k)]]))
-  corrplot::corrplot(cor(ZiClust[[paste0("k",k)]], ZMOFA[[paste0("k",k)]]))
+  corrplot::corrplot(abs(cor(ZMOFA[[paste0("k",k)]])))
+  corrplot::corrplot(abs(cor(ZiClust[[paste0("k",k)]])))
+  corrplot::corrplot(abs(cor(ZiClust[[paste0("k",k)]], ZMOFA[[paste0("k",k)]])))
 }
 ```
 
 
 #Variance Explained plot
-
+Function to get R2 plot for iCluster: calculateVarianceExplained4iClust
 ```{r, echo=F}
 calculateVarianceExplained4iClust <- function(Z,SW, Y, alpha, plotit=T, perFeature=F, 
                                        orderFactorsbyR2=F, showtotalR2=T, showVarComp=F) {
@@ -197,8 +196,8 @@ calculateVarianceExplained4iClust <- function(Z,SW, Y, alpha, plotit=T, perFeatu
       # Sort factors
       fvar_mk_df <- reshape2::melt(fvar_mk, varnames=c("factor","view"))
       fvar_mk_df$factor <- factor(fvar_mk_df$factor)
-      hc <- hclust(dist(t(fvar_mk)))
-      fvar_mk_df$view <- factor(fvar_mk_df$view, levels = colnames(fvar_mk)[hc$order])
+      # hc <- hclust(dist(t(fvar_mk)))
+      fvar_mk_df$view <- factor(fvar_mk_df$view, levels = colnames(fvar_mk)) #[hc$order])
       if(orderFactorsbyR2) factor_order <- order(rowSums(fvar_mk), decreasing = F) else factor_order <- rev(1:length(factorsNonconst))
       fvar_mk_df$factor <- factor(fvar_mk_df$factor, levels = factorsNonconst[factor_order])
       
@@ -229,7 +228,7 @@ calculateVarianceExplained4iClust <- function(Z,SW, Y, alpha, plotit=T, perFeatu
         
       # Plot 2: barplot with coefficient of determination (R2) per view
       fvar_m_df <- data.frame(view=names(fvar_m), R2=fvar_m)
-      fvar_m_df$view <- factor(fvar_m_df$view, levels = colnames(fvar_mk)[hc$order])
+      fvar_m_df$view <- factor(fvar_m_df$view, levels = colnames(fvar_mk))#[hc$order])
       
       bplt <- ggplot( fvar_m_df, aes(x=view, y=R2)) + 
         ggtitle("Total variance explained per view") +
@@ -282,6 +281,7 @@ calculateVarianceExplained4iClust <- function(Z,SW, Y, alpha, plotit=T, perFeatu
 }
 ```
 
+Make plots
 ```{r R2_plots, fig.path="fig/", dev=c("pdf", "png")}
 data_scaled <- lapply(data, scale, center=T, scale=F)
 for(k in c(5,10,15)){
