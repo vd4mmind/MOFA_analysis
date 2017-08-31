@@ -1,0 +1,288 @@
+---
+title: "iCluster performance on simulated data"
+author: "Britta Velten"
+date: "11/8/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, warning=F, message=F}
+setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/")
+library(iClusterPlus)
+devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
+library(ggplot2)
+library(cowplot)
+library(pheatmap)
+library(gridExtra)
+```
+
+# I/O Options
+```{r}
+in.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/data/"
+iClfit.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/iCluster_results/centered_results/"
+MOFAfit.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/MOFA_results/"
+plotdir <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Figures_iCluster/"
+```
+
+# Load simulated data
+```{r}
+files <- list.files(in.folder, pattern=".txt$")
+
+# data
+simData <- lapply(files, function(fnm){
+  dt <- read.table(file.path(in.folder,fnm))
+  as.matrix(dt)
+})
+
+
+# view index
+mvec <- sapply(files, function(fnm){
+	  split <- strsplit(fnm,"_")[[1]]
+  	substr(split[[2]],1,nchar(split[[2]])-4)
+	})
+
+# number of facotrs
+kvec <- sapply(files, function(fnm){
+	split <- strsplit(fnm,"_")[[1]]
+	split[1]
+	})
+
+# set names
+names(simData) <- paste("k",kvec,"_","m",mvec, sep="")
+#center
+simData[grepl("m[0-2]", names(simData))] <- lapply(simData[grepl("m[0-2]", names(simData))], function(dd) scale(dd, center=TRUE, scale=FALSE))
+
+```
+
+# Run iCluster (done on server)
+```{r, eval=F}
+# # fit iCluster model
+# for(k in unique(kvec)){
+# tuned.out <- tune.iClusterPlus(cpus =12, dt1=simData[[paste("k",k,"_","m",0, sep="")]],
+#                                dt2=simData[[paste("k",k,"_","m",1, sep="")]],
+#                                dt3=simData[[paste("k",k,"_","m",2, sep="")]],
+#                                type=c("gaussian","gaussian","gaussian"),
+#                                K=as.numeric(k), n.lambda=185, scale.lambda=c(1,1,1),maxiter=20)
+# #save result
+# save(tuned.out, file=paste("iclustertuned.out",k,".RData", sep=""))
+# }
+```
+
+# Load fitted models (iCluster)
+```{r}
+iCluster.out <- lapply(unique(kvec), function(k) {
+  load(file.path(iClfit.folder,paste("iclustertuned.out",k,".RData", sep="")))
+  tuned.out
+  })
+names(iCluster.out) <- unique(kvec)
+```
+
+# Load fitted models (MOFA)
+```{r}
+MOFA.out <- lapply(unique(kvec), function(k) loadModel(file.path(MOFAfit.folder,paste("0_",k,".hdf5", sep=""))))
+names(MOFA.out) <- unique(kvec)
+```
+
+# True alpha
+```{r}
+alpha <- simData[grepl("alpha", names(simData))]
+names(alpha) <- sub("k","",sapply(strsplit(names(alpha), "_"), "[[",1))
+alpha <- alpha[unique(kvec)]
+```
+
+
+# Variance explained per view
+```{r, echo=F}
+calculateVarianceExplained4iClust <- function(iCl_fit, k=NULL, data, plotit=T, perFeature=F, 
+                                       orderFactorsbyR2=F, showtotalR2=T, showVarComp=F) {
+  
+  # if only fit for one k transform to list
+  if(!is.null(names(iCl_fit)) & all(names(iCl_fit)==c("fit","lambda"))) iCl_fit <- list(iCl_fit)
+  
+  kvec = as.character(sapply(iCl_fit, function(out) ncol(out$fit[[1]]$meanZ)))
+  names(iCl_fit) <- kvec
+  
+  if(is.null(k)) k <- kvec[1]
+  print(paste("Calculating for k=", k))
+  stopifnot(k %in% kvec)
+  
+  #choose best model based on BIC
+  bic <-  getBIC(iCl_fit)
+  bestFitIdx <- apply(bic,2,which.min)
+  names(bestFitIdx) <- kvec
+  bestFit <- lapply(kvec, function(i) iCl_fit[[i]]$fit[[bestFitIdx[i]]])
+  names(bestFit) <-kvec
+
+  #choose model with specified k
+  iClmodel <- bestFit[[k]]
+  weightsiClust <- iClmodel$beta
+  Y <- data[grepl(paste("k",k,"_m[0-2]", sep=""),names(data))]
+  ZiClust <- iClmodel$meanZ
+  corrplot::corrplot(cor(ZiClust), title = "iCluster factors correlation")
+  intercept <- iClmodel$alpha
+  SW <- lapply(seq_along(weightsiClust), function(d) cbind(intercept=intercept[[d]], weightsiClust[[d]])) 
+  names(SW) <- names(Y)
+  Z <- cbind(intercept=1,ZiClust)
+  colnames(Z) <- c("intercept", paste(1:ncol(ZiClust), "iClust", sep="_"))
+  for (i in seq_along(SW)) colnames(SW[[i]]) <- c("intercept", paste(1:ncol(ZiClust), "iClust", sep="_"))
+
+  K <- ncol(Z)
+  views <-names(SW)
+  factors <- colnames(Z)
+  
+  # Calculate predictions under the  iCluster model using all or a single factor
+  Ypred_m <- lapply(views, function(m) Z%*%t(SW[[m]])); names(Ypred_m) <- views
+  Ypred_mk <- lapply(views, function(m) {
+                      ltmp <- lapply(factors, function(k) Z[,k]%*%t(SW[[m]][,k]) )
+                      names(ltmp) <- factors
+                      ltmp
+                    })
+  names(Ypred_mk) <- views
+
+  # Calculate prediction under the null model (intercept only)
+    #by default the null model is using the intercept LF if present and not the actual mean
+    NullModel <- lapply(views, function(m)  Ypred_mk[[m]][[1]][1,] )
+    names(NullModel) <- views
+    resNullModel <- lapply(views, function(m) sweep(Y[[m]],2,NullModel[[m]],"-"))
+    partialresNull <- lapply(views, function(m) sweep(Ypred_m[[m]],2,NullModel[[m]],"-"))
+    names(resNullModel) <- views
+    names(partialresNull) <- views
+    
+  # Remove intercept factor if present
+  factorsNonconst <- factors[-1]
+    
+  # Calculate coefficient of determination
+    # per view
+    fvar_m <- sapply(views, function(m) 1 - sum((Y[[m]]-Ypred_m[[m]])**2, na.rm=T) / sum(resNullModel[[m]]**2, na.rm=T))
+     
+    # per view and feature
+    if (perFeature)
+      fvar_md <- lapply(views, function(m) 1 - colSums((Y[[m]]-Ypred_m[[m]])**2,na.rm=T) / colSums(resNullModel[[m]]**2,na.rm=T))
+    
+    # per factor and view
+     if (showtotalR2) {
+       fvar_mk <- sapply(views, function(m) sapply(factorsNonconst, function(k) 1 - sum((resNullModel[[m]]-Ypred_mk[[m]][[k]])**2, na.rm=T) / sum(resNullModel[[m]]**2, na.rm=T) ))
+     } else {
+       fvar_mk <- sapply(views, function(m) sapply(factorsNonconst, function(k) 1 - sum((partialresNull[[m]]-Ypred_mk[[m]][[k]])**2, na.rm=T) / sum(partialresNull[[m]]**2, na.rm=T) ))
+     }
+    
+    # per factor and view and feature
+    if (perFeature)
+      fvar_mdk <- lapply(views, function(m) lapply(factorsNonconst, function(k) 1 - colSums((resNullModel[[m]]-Ypred_mk[[m]][[k]])**2,na.rm=T) / colSums(resNullModel[[m]]**2,na.rm=T)))
+    
+    # Set names
+    names(fvar_m) <- views
+    if(perFeature){
+      names(fvar_md) <- views
+      names(fvar_mdk) <- views
+      for(i in names(fvar_md)) names(fvar_md[[i]]) <- colnames(Y[[i]])
+      for(i in names(fvar_mdk)) rownames(fvar_mdk[[i]]) <- colnames(Y[[i]])
+    }
+    colnames(fvar_mk) <- views
+    rownames(fvar_mk) <- factorsNonconst 
+    
+  # Store results
+    R2_list <- list(
+      R2Total = fvar_m,
+      R2PerFactor = fvar_mk)
+    if(perFeature){
+      R2_list$R2PerFactorAndFeature = fvar_mdk
+      R2_list$R2PerFeature = fvar_md
+    }
+  
+  return(R2_list)
+ 
+}
+```
+
+Function to plot R2:
+```{r, echo=F}
+plotR2 <- function(fvar_mk, title="") { 
+  
+      
+      # Sort factors
+      fvar_mk_df <- reshape2::melt(fvar_mk, varnames=c("factor","view"))
+      fvar_mk_df$factor <- factor(fvar_mk_df$factor)
+      hc <- hclust(dist(t(fvar_mk)))
+      fvar_mk_df$view <- factor(fvar_mk_df$view, levels = colnames(fvar_mk)[hc$order])
+      fvar_mk_df$factor <- factor(fvar_mk_df$factor, levels = rownames(fvar_mk))
+      
+    if(length(unique(fvar_mk_df$value))>2){
+      # Plot 1: grid with the variance explained per factor in each view
+      hm <- ggplot(fvar_mk_df, aes(view,factor)) + 
+        geom_tile(aes(fill=value), color="black") +
+        guides(fill=guide_colorbar("R2")) +
+        scale_fill_gradientn(colors=c("gray97","darkblue"), guide="colorbar") +
+        ylab("Latent factor") +
+        theme(
+          # plot.margin = margin(5,5,5,5),
+          plot.title = element_text(size=17, hjust=0.5),
+          axis.text.x = element_blank(),
+          axis.text.y =  element_blank(),
+          axis.title.y = element_text(size=15),
+          axis.line = element_blank(),
+          axis.ticks =  element_blank(),
+          panel.background = element_blank()
+          )+ 
+        guides(fill=guide_colorbar("R2"))
+    } else{
+      fvar_mk_df$value <- ifelse(fvar_mk_df$value==1, "yes", "no")
+       hm <- ggplot(fvar_mk_df, aes(view,factor)) + 
+        geom_tile(aes(fill=as.factor(value)), color="black") +
+        guides(fill=guide_colorbar("R2")) +
+        scale_fill_manual(values=c("gray97","darkblue")) +
+        ylab("Latent factor") +
+        theme(
+          # plot.margin = margin(5,5,5,5),
+          plot.title = element_text(size=17, hjust=0.5),
+          axis.text.x = element_blank(),
+          axis.text.y =  element_blank(),
+          axis.title.y = element_text(size=15),
+          axis.line = element_blank(),
+          axis.ticks =  element_blank(),
+          panel.background = element_blank()
+          )+ 
+        guides(fill=guide_legend("active"))
+    }
+
+      
+      hm <- hm + ggtitle(title)  
+  
+        
+    hm
+}
+```
+
+# Comparison of variacen explained plots
+```{r}
+for(i in seq_along(iCluster.out)){
+
+# get R2 and re-order factors by number of active views:  
+r2out_iClust <- calculateVarianceExplained4iClust(iCluster.out[[i]], data = simData, orderFactorsbyR2 = T)
+r2out_iClust$R2PerFactor <- r2out_iClust$R2PerFactor[order(colSums(c(101,102,103)*t(r2out_iClust$R2PerFactor>0.05))),]
+r2out_MOFA <- calculateVarianceExplained(MOFA.out[[i]], orderFactorsbyR2 = T, plotit = F)
+r2out_MOFA$R2PerFactor <- r2out_MOFA$R2PerFactor[order(colSums(c(101,102,103)*t(r2out_MOFA$R2PerFactor>0.05))),]
+
+r2MOFA <- r2out_MOFA$R2PerFactor
+colnames(r2MOFA) <- 0:2
+r2iCluster <- r2out_iClust$R2PerFactor
+colnames(r2iCluster) <- 0:2
+
+# get true pattern
+truepattern <- t(1/alpha[[i]])
+truepattern <- truepattern[order(colSums(c(101,102,103)*t(truepattern>0.05)), decreasing = F),]
+colnames(truepattern) <- 0:2
+
+# make plots
+gg_iCluster <- plotR2(r2iCluster, title = "iCluster")
+gg_MOFA <- plotR2(r2MOFA, title = "MOFA")
+gg_truth <- plotR2(truepattern, title = "ground truth")
+
+# save
+pdf(file.path(plotdir, paste("iClusterComparison_k_centered", names(iCluster.out)[i], ".pdf", sep="" )), width=10, height=2+as.numeric(names(iCluster.out)[i])/10)
+grid.arrange(gg_truth, gg_MOFA, gg_iCluster , ncol=3, top =paste("k =", names(iCluster.out)[i]))
+dev.off()
+}
+```
+

@@ -1,0 +1,135 @@
+---
+title: "GFA_Imputation_Figure"
+author: "Britta Velten"
+date: "5/30/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(data.table)
+library(ggplot2)
+library(magrittr)
+library(gridExtra)
+library(grid)
+```
+
+```{r}
+source("../plottingUtils.R")
+```
+
+# View and ktype options
+Following runs are available:
+
+- viab 23Aug
+- expr 24Aug
+
+```{r}
+ktype <- "learnK" #k25
+view <- "viab"  #expr
+run_date <- "23Aug" #24Aug
+```
+
+
+# Get results from imputation
+```{r}
+# complete cases
+load(paste("benchmark_results_",run_date,"_full_",view,"_rmPassengers_",ktype,".RData", sep=""))
+benchmark_results_full <- benchmark_results
+
+# at random
+load(paste("benchmark_results_",run_date,"_random_",view,"_rmPassengers_",ktype,".RData", sep=""))
+benchmark_results_random <- benchmark_results
+
+# joint list
+results <- list(random = benchmark_results_random, full = benchmark_results_full)
+rm(benchmark_results)
+```
+
+# Summarize results
+```{r}
+# Unique facotrs to missing views are now taken core of with detectPassengers befor imputation, THRESHOLD is at 0.03
+Models2Exclude <- NULL
+
+# collect results
+results_small <- lapply(results, function(df) {
+  # take out imp_kNN_featurewise
+  df <- filter(df, !modelName %in% Models2Exclude & method!="imp_kNN_featurewise")
+  df$method <- as.character(df$method)
+  df[df$method =="imp_kNN_samplewise",]$method <- "kNN"
+  df
+  })
+
+# summarize results across runs
+summaries <- lapply(names(results_small), function(dfnm){
+  df <- results_small[[dfnm]]
+  if(view=="viab"){
+  if(dfnm=="full") df %<>% group_by(method, FullCasesMissing.viab)
+      else df %<>% group_by(method, pNA.viab)
+} else if(view=="expr"){
+  if(dfnm=="full") df %<>% group_by(method, FullCasesMissing.mRNA) 
+    else df %<>% group_by(method, pNA.mRNA) 
+}
+  summaryDF <- df %>% dplyr::summarize(mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
+  summaryDF$se <- summaryDF$sd/sqrt(summaryDF$n)
+  summaryDF
+  #take out guess (use Mean as baseline)
+  summaryDF %<>% filter(method!="Guess")
+})
+names(summaries) <- names(results_small)
+``` 
+
+# Plots
+```{r}
+pdf(paste("~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Imputation/ImputationFigures/Imputation_",view,"_",run_date,"_rmPassengers_",ktype,".pdf",sep=""), width=10, height = 5, onefile = F)
+
+# random
+if(view=="viab"){
+  gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
+} else if (view=="expr"){
+  gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) 
+}
+gg_summary_random <- gg_summary_random + geom_point()  + 
+  xlab("Precentage of values missing") + ylab("Mean Squared Error") +
+  geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
+  geom_line() +guides(col=F)+theme_bw(base_size=18) +
+  theme(plot.title = element_text(size=rel(1)),
+        axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black"))+
+  ggtitle(paste("Values missing at random"))
+
+if(view=="viab"){
+  gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
+} else if (view=="expr"){
+  gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.mRNA>1), aes(x=FullCasesMissing.mRNA, y=mean_MSE, col=method))
+}
+
+# full cases
+gg_summary_full <-gg_summary_full +
+    geom_errorbar(aes(ymin=mean_MSE-2*se, ymax=mean_MSE +2*se), width=1) +
+    geom_line() +guides(col=F) + theme_bw(base_size=18)+
+    theme(plot.title = element_text(size=rel(1)),
+          axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black")) +
+    geom_point()  +xlab("Number of patients missing (out of n=121)") +
+    ylab("") + ggtitle(paste("Patients missing all measurements"))
+
+# legend
+if(view=="viab"){
+  gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+} else if (view=="expr"){
+  gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+}
+gg_legend_sum <- get_legend(gg_legend_sum)
+
+# arrange all plots
+grid.arrange(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, widths = c(10,10,3))#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+
+dev.off()
+```
+
