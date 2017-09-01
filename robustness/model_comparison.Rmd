@@ -126,8 +126,8 @@ tmp <- lv_dt %>% split(.$model) %>% map(~ tail(.,n=1)) %>% rbindlist %>%
 p <- ggplot(tmp, aes(x=model, y=k)) +
   geom_bar(aes(fill=elbo), stat="identity") +
   # geom_bar(stat="identity") +
-  # scale_y_continuous(breaks = c(0,6,7,8,9,10,11)) +
-  scale_fill_gradient(low="red3",high="green3") +
+  scale_y_continuous(breaks = c(0,5,10), expand=c(0,0.2)) +
+  # scale_fill_gradient(low="red3",high="green3") +
   labs(x="", y="Number of active factors") +
   theme_bw() +
   # guides(fill=FALSE) +
@@ -136,7 +136,8 @@ p <- ggplot(tmp, aes(x=model, y=k)) +
     plot.margin = margin(10,10,10,10),
     axis.title.x=element_text(colour="black",size=rel(1.75), margin=margin(20,0,3,0)),
     axis.title.y=element_text(colour="black",size=rel(1.75), margin=margin(0,20,0,3)),
-    axis.text.x=element_text(colour="black",size=rel(1.5), angle=90),
+    # axis.text.x=element_text(colour="black",size=rel(1.5), angle=90),
+    axis.text.x=element_blank(),
     axis.text.y=element_text(colour="black",size=rel(1.5)),
     axis.ticks.x = element_line(colour="black"),
     axis.ticks.y = element_line(colour="black"),
@@ -148,7 +149,7 @@ p <- ggplot(tmp, aes(x=model, y=k)) +
   )
 print(p)
 
-pdf("/Users/ricard/CLL/robustness_across_trials/out/K.pdf", width=7, height=5)
+pdf("/Users/ricard/MOFA_CLL/robustness/out/nfactors.pdf", width=7, height=5)
 print(p)
 dev.off()
 
@@ -158,14 +159,15 @@ dev.off()
 ```{r}
 weights <- lapply(1:length(models), function(i) {
   model <- models[[i]]
-  Wtmp <- getWeights(model, views="mRNA", factors="all")
+  Wtmp <- getWeights(model, views="mRNA", factors="all")[[1]]
   colnames(Wtmp) <- paste(paste0("LF", 1:(ncol(Wtmp))), paste("model", i, sep=""), sep="_")
   Wtmp
   })
 
 corWeights <- abs(cor(Reduce(cbind,weights)))
-pdf("/Users/ricard/CLL/robustness_across_trials/out/robustness_weights.pdf", width=7, height=5)
-pheatmap::pheatmap(corWeights, show_rownames = F, show_colnames = F)
+pdf("/Users/ricard/MOFA_CLL/robustness/out/robustness_weights.pdf", width=7, height=5)
+pheatmap::pheatmap(corWeights, show_rownames = F, show_colnames = F, 
+                   color = colorRampPalette(c("white",RColorBrewer::brewer.pal(9,name="YlOrRd")))(100))
 dev.off()
 ```
 

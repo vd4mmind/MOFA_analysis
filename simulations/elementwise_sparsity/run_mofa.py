@@ -10,7 +10,7 @@ outdir = '/hps/nobackup/stegle/users/ricard/MOFA/simulations/results/sparsity'
 # scriptDir="/Users/ricard/MOFA/MOFA/run"
 scriptDir="/homes/ricard/MOFA/MOFA/run"
 
-iterations = 3000
+iterations = 5000
 ntrials = 10
 
 
@@ -20,7 +20,6 @@ ntrials = 10
 
 M=1
 D_vals = [ 5000, 10000 ]
-# D_vals = [ 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000 ]
 
 # Sparse model
 for d in D_vals:
@@ -33,7 +32,7 @@ for d in D_vals:
         initialFactors = 10
         # startDrop=10
         outFile = "%s/sparse/D/d_%s_%d.hdf5" % (outdir, d, trial)
-        cmd = "python %s/template_run.py --inFiles %s --outFile %s --likelihoods %s --views %s --factors %d --learnTheta %s --initTheta %s --startSparsity 1 --iter %d --tolerance 0.01 --schedule Y SW Z AlphaW Theta Tau --center_features" % (scriptDir, inFiles, outFile, likelihoods, views, initialFactors, learnTheta, initTheta, iterations)
+        cmd = "python %s/template_run.py --inFiles %s --outFile %s --likelihoods %s --views %s --factors %d --learnTheta %s --initTheta %s --iter %d --tolerance 0.01 --schedule Y SW Z AlphaW Theta Tau --center_features" % (scriptDir, inFiles, outFile, likelihoods, views, initialFactors, learnTheta, initTheta, iterations)
         cmd = "bsub -M 2048 -n 1 -q highpri -o /homes/ricard/tmp/simulations_sparse.out %s" % cmd
         os.system(cmd)
 

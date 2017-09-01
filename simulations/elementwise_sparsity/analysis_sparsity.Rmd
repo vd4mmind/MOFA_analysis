@@ -9,7 +9,7 @@ output:
 
 ```{r}
 devtools::load_all("/Users/ricard/mofa/MOFAtools")
-library(MOFAtools)
+# library(MOFAtools)
 library(data.table)
 library(purrr)
 library(ggplot2)
@@ -36,41 +36,55 @@ theme_fn <- function() {
 }
 ```
 
-<!-- Load data and fit PCA solution -->
 ```{r}
-in.folder <- "/Users/ricard/data/MOFA/simulations/26Aug/data/D/trial0"
-files <- list.files(in.folder, pattern=".txt")
-
-D_list <- unique(sapply(files, function(x) strsplit(x,"_")[[1]][1]))
-views <- c("0")
-
-pca_models <- list()
-for (d in D_list) {
-  data_list <- list()
-  for (m in views) {
-    data_list[[m]] <- fread(paste0(in.folder,"/",d,"_",m,".txt")) %>% as.matrix
-  }
-  data <- do.call("cbind",data_list)
-  pca_models[[d]] <- pcaMethods::pca(data, nPcs=10, center=T, scale="none")
-}
-
+in.folder <- "/Users/ricard/data/MOFA/simulations/26Aug/data/D"
+D_list <- c(5000,10000)
+ntrials <- 10
+views <- "0"
 ```
 
 <!-- Load true weights -->
 ```{r}
-in.folder <- "/Users/ricard/data/MOFA/simulations/26Aug/data/D/trial0"
-files <- list.files(in.folder, pattern=".hdf5$")
-
-D_list <- unique(sapply(files, function(x) strsplit(x,"_")[[1]][1]))
-views <- c("0")
+in.folder <- "/Users/ricard/data/MOFA/simulations/26Aug/data/D"
 
 weights_list <- list()
 for (d in D_list) {
-  weights_list[[d]] <- list()
-  for (m in views) {
-    weights_list[[d]][[m]] <- fread(paste0(in.folder,"/",d,"_W_",m,".txt")) %>% as.matrix
+  for (trial in seq(0,ntrials-1)) {
+    weights_list[[paste0(d,"_",trial)]] <- list()  
+    for (m in views) {
+      weights_list[[paste0(d,"_",trial)]][[m]] <- fread(paste0(in.folder,"/trial",trial,"/",d,"_W_",m,".txt")) %>% as.matrix
+    }
   }
 }
+```
+
+<!-- Load true latent variables -->
+```{r}
+in.folder <- "/Users/ricard/data/MOFA/simulations/26Aug/data/D"
+
+factors_list <- list()
+for (d in D_list) {
+  for (trial in seq(0,ntrials-1)) {
+    factors_list[[paste0(d,"_",trial)]] <- fread(paste0(in.folder,"/trial",trial,"/",d,"_Z.txt")) %>% as.matrix
+  }
+}
+```
+
+<!-- Load data and fit PCA solution -->
+```{r}
+
+pca_models <- list()
+for (d in D_list) {
+  for (trial in seq(0,ntrials-1)) {
+    data_list <- list()
+    for (m in views) {
+      data_list[[m]] <- fread(paste0(in.folder,"/trial",trial,"/",d,"_",m,".txt")) %>% as.matrix
+    }
+    data <- do.call("cbind",data_list)
+    pca_models[[paste0(d,"_",trial)]] <- pcaMethods::pca(data, nPcs=10, center=T, scale="none")
+  }
+}
+
 ```
 
 <!-- Load sparse models -->
@@ -105,8 +119,10 @@ for (i in 1:length(files)) {
 # PCA model
 pca_weights <- list()
 for (i in names(pca_models)) {
+  d <- strsplit(i,"_")[[1]][1]
+  trial <- strsplit(i,"_")[[1]][2]
   pca_weights[[i]] <- pca_models[[i]]@scores %>% as.data.table %>%
-    .[,c("feature","trial","D","view"):=list(1:nrow(.),"0",paste0("D=",i),"all")] %>%
+    .[,c("feature","trial","D","view"):=list(1:nrow(.),trial,paste0("D=",d),"all")] %>%
     melt(id.vars=c("feature","trial","D","view"), variable.name="factor") %>% 
     .[,c("feature","factor","value","view","D","trial")]
 }
@@ -150,53 +166,73 @@ weights <- rbind(pca_weights, sparse_weights, nonsparse_weights)
 # Correlation with true weights
 ```{r}
 
-# True weights
-foo <- weights_list[["5000"]][["0"]]
+zero_threshold <- 1e-3
+models <- names(weights_list)
 
-# Sparse model weights
-R2 <- calculateVarianceExplained(sparse_models[["5000_0"]], plotit=F)$R2PerFactor[,"0"]
-sparse_active_factors <- as.character(which(R2>0.01))
-bar1 <- getWeights(sparse_models[["5000_0"]], views = "0")[,sparse_active_factors]
-
-# Non-sparse model weights
-R2 <- calculateVarianceExplained(nonsparse_models[["5000_0"]], plotit=F)$R2PerFactor[,"0"]
-nonsparse_active_factors <- as.character(which(R2>0.01))
-bar2 <- getWeights(nonsparse_models[["5000_0"]], views = "0")[,nonsparse_active_factors]
-
-# PCA weights
-bar3 <- pca_models[["5000"]]@loadings[1:5000,]
-
-
-r <- cor(abs(foo),abs(bar1))
-dt_sparse <- data.table(model="sparse", factor=sparse_active_factors, mean=0, cor=0)
-for (k in sparse_active_factors) {
-  kk <- which.max(r[,k])
-  dt_sparse[factor==k, mean:=mean( (abs(foo[,kk])<1e-2)==(abs(bar1[,k])<1e-2) )]
-  dt_sparse[factor==k, cor:=cor(abs(foo[,kk]),abs(bar1[,k]))]
+dt_sparse <- list()
+dt_nonsparse <- list()
+dt_pca <- list()
+for (model in models) {
+  print(model)
+  d <- as.numeric(strsplit(model,"_")[[1]][1])
+  trial <- strsplit(model,"_")[[1]][2]
+  
+  # True weights and factors
+  true_weights <- weights_list[[model]][["0"]]
+  true_factors <- factors_list[[model]]
+  
+  # Sparse model weights
+  if (!is.null(nonsparse_models[[model]])) {
+    R2 <- calculateVarianceExplained(sparse_models[[model]], plotit=F)$R2PerFactor[,"0"]
+    sparse_active_factors <- as.character(which(R2>0.03))
+    infered_weights <- getWeights(sparse_models[[model]])[["0"]][,sparse_active_factors]
+    infered_factors <- getFactors(sparse_models[[model]], factors = sparse_active_factors)
+    # r <- cor(abs(true_weights),abs(infered_weights))
+    r <- cor(true_factors,infered_factors)
+    dt_sparse[[model]] <- data.table(model="sparse", D=d, trial=trial, factor=sparse_active_factors, mean=0, cor=0)
+    for (k in sparse_active_factors) {
+      kk <- which.max(r[,k])
+      # dt_sparse[[model]][factor==k, mean:=mean( (abs(true_weights[,kk])<zero_threshold)==(abs(infered_weights[,k])<zero_threshold) )]
+      dt_sparse[[model]][factor==k, mean:=length(intersect(which(abs(true_weights[,kk])<zero_threshold), which(abs(infered_weights[,k])<zero_threshold) ))/d]
+      dt_sparse[[model]][factor==k, cor:=cor(abs(true_weights[,kk]),abs(infered_weights[,k]))]
+    }
+  }
+  
+  # Non-sparse model
+  if (!is.null(nonsparse_models[[model]])) {
+    R2 <- calculateVarianceExplained(nonsparse_models[[model]], plotit=F)$R2PerFactor[,"0"]
+    nonsparse_active_factors <- as.character(which(R2>0.03))
+    bar2 <- getWeights(nonsparse_models[[model]])[["0"]][,nonsparse_active_factors]
+    r <- cor(abs(true_weights),abs(bar2))
+    dt_nonsparse[[model]] <- data.table(model="nonsparse", D=d, trial=trial, factor=nonsparse_active_factors, mean=0, cor=0)
+    for (k in nonsparse_active_factors) {
+      kk <- which.max(r[,k])
+      # dt_nonsparse[[model]][factor==k, mean:=mean( (abs(true_weights[,kk])<zero_threshold)==(abs(bar2[,k])<zero_threshold) )]
+      dt_nonsparse[[model]][factor==k, mean:=length(intersect(which(abs(true_weights[,kk])<zero_threshold), which(abs(bar2[,k])<zero_threshold) ))/d]
+      dt_nonsparse[[model]][factor==k, cor:=cor(abs(true_weights[,kk]),abs(bar2[,k]))]
+    }
+  }
+  
+  # PCA weights
+  bar3 <- pca_models[[model]]@loadings[1:d,]
+  r <- cor(abs(true_weights),abs(bar3))
+  dt_pca[[model]] <- data.table(model="pca", D=d, trial=trial, factor=1:ncol(r), mean=0, cor=0)
+  for (k in 1:ncol(r)) {
+    kk <- which.max(r[,k])
+    # dt_pca[[model]][factor==k, mean:=mean( (abs(true_weights[,kk])<zero_threshold)==(abs(bar3[,k])<zero_threshold) )]
+    dt_pca[[model]][factor==k, mean:=length(intersect(which(abs(true_weights[,kk])<zero_threshold), which(abs(bar3[,k])<zero_threshold) ))/d]
+    dt_pca[[model]][factor==k, cor:=cor(abs(true_weights[,kk]),abs(bar3[,k]))]
+  }
+  
 }
 
-r <- cor(abs(foo),abs(bar2))
-dt_nonsparse <- data.table(model="nonsparse", factor=nonsparse_active_factors, mean=0, cor=0)
-for (k in nonsparse_active_factors) {
-  kk <- which.max(r[,k])
-  dt_nonsparse[factor==k, mean:=mean( (abs(foo[,kk])<1e-2)==(abs(bar2[,k])<1e-2) )]
-  dt_nonsparse[factor==k, cor:=cor(abs(foo[,kk]),abs(bar2[,k]))]
-}
-
-r <- cor(abs(foo),abs(bar3))
-dt_pca <- data.table(model="pca", factor=1:ncol(r), mean=0, cor=0)
-for (k in 1:ncol(r)) {
-  kk <- which.max(r[,k])
-  dt_pca[factor==k, mean:=mean( (abs(foo[,kk])<1e-2)==(abs(bar3[,k])<1e-2) )]
-  dt_pca[factor==k, cor:=cor(abs(foo[,kk]),abs(bar3[,k]))]
-}
-
-dt <- rbind(dt_sparse, dt_nonsparse, dt_pca)
+dt <- rbind(rbindlist(dt_sparse), rbindlist(dt_nonsparse), rbindlist(dt_pca))
 
 
 p <- ggplot(dt, aes(x=model, y=mean)) +
   geom_boxplot(aes(fill=model), alpha=0.5) +
   ggbeeswarm::geom_quasirandom(aes(color=model)) +
+  facet_wrap(~D) +
   labs(x="", y="Fraction of true zero weights recovered") +
   theme_bw() + theme(
     plot.margin = margin(10,10,10,10),
@@ -222,6 +258,7 @@ p <- ggplot(dt, aes(x=model, y=cor)) +
   geom_boxplot(aes(fill=model), alpha=0.5) +
   ggbeeswarm::geom_quasirandom(aes(color=model)) +
   labs(x="", y="Correlation with true weights") +
+  facet_wrap(~D) +
   theme_bw()
 print(p)
 ```
@@ -374,7 +411,7 @@ dev.off()
 ```{r}
 p <- ggplot(weights[D=="D=5000"], aes(x=value)) +
 # p <- ggplot(weights[D=="D=1000" & type%in%c("sparse","nonsparse")], aes(x=value)) +
-  stat_ecdf(aes(color=type), geom = "step") +
+  stat_ecdf(aes(group=interaction(trial,type), color=type), geom = "step") +
   theme_bw() +
   guides(colour = guide_legend(override.aes = list(size=1.5))) +
   scale_x_continuous(limits=c(-1,1)) +
