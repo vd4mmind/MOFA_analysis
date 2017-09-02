@@ -38,13 +38,14 @@ source("ImputeBenchmark.R")
 #In/Out options and define setting (ktype/view)
 Following runs are available:
 
-- viab 23Aug
-- expr 24Aug
+- viab 23Aug (no sparsity)
+- expr 24Aug (no sparsity)
+- viab 1Sep (sparsity)
 
 ```{r}
 ktype <- "learnK" #k25
 view <- "viab"  #expr
-run_date <- "23Aug" #24Aug
+run_date <- "1Sep" #"23Aug" #24Aug
 ```
 
 Output and Data directory
