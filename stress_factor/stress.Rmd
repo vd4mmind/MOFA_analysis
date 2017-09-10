@@ -167,7 +167,6 @@ foobar <- foobar[!category %in% c("mTOR","NFkB","PIM","Angiogenesis","Cytoskelet
 foobar$category <- factor(foobar$category, levels=unique(foobar$category))
 
 # Remove uninteresting factors
-# foobar <- foobar[!factor %in% c("intercept")]
 foobar <- foobar[factor==stress_factor]
 
 # Sort by category
@@ -183,10 +182,8 @@ asd[,color:=sample_colors(length(unique(category)))[as.numeric(category)]]
 
 p <- ggplot(asd, aes(x=drug, y=weight, color=category)) +
   geom_point() +
-  # geom_segment(aes(xend=drug, yend=-max(asd$weight)-0.01, color=significant)) +
   geom_segment(aes(xend=drug, yend=0), size=1) +
   xlab("") + ylab("Mean Relative Loading on factor 5") +
-  # scale_y_continuous(limits=c(-(max(abs(asd$weight))-0.01),max(abs(asd$weight)+0.01)) +
   coord_flip() +
   guides(color=guide_legend(title="Drug category")) +
   theme(
@@ -249,9 +246,7 @@ tmp[,conc:=factor(conc,levels=c("5","4","3","2","1"))]
 
 f <- function(x) { return(data.frame(y=mean(x), ymin=mean(x)-sd(x), ymax=mean(x)+sd(x))) }
 p <- ggplot(tmp, aes(x=conc, y=viab)) +
-  # stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data=f, geom="errorbar")  +
   stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y="mean", geom="line", size=0.75)  +
-  # stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data="mean", geom="line")  +
   stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data = mean_se, geom = "errorbar", width=0.5, alpha=0.5) +
   xlab("Concentration") + ylab("Cellular viability") +
   scale_color_manual(values=c("red","blue"), labels=c("HSP low","HSP high")) +
@@ -270,7 +265,7 @@ p <- ggplot(tmp, aes(x=conc, y=viab)) +
     panel.background = element_blank(),
     legend.key = element_rect(fill = "white"),
     legend.position = "right",
-    # legend.direction = "horizontal",
+    strip.text = element_text(size=rel(2.0)),
     legend.text = element_text(size = rel(1.2)),
     legend.title = element_text(size = rel(1.5))
   )

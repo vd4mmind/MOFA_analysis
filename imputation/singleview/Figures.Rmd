@@ -1,0 +1,105 @@
+---
+title: "GFA_Imputation_Figure"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(data.table)
+library(ggplot2)
+library(magrittr)
+library(gridExtra)
+library(grid)
+```
+
+```{r}
+# source("../plottingUtils.R")
+source("~/MOFA_CLL/utils/plottingUtils.R")
+```
+
+# View and ktype options
+```{r}
+ktype <- ""
+view <- "viab"
+run_date <- "6Sep"
+```
+
+
+# Get results from imputation
+```{r}
+load("/Users/ricard/MOFA_CLL/imputation/singleview/out/benchmark_results_6Sep_random_drug_rmPassengers_.RData")
+benchmark_results_random <- benchmark_results
+results <- list(random = benchmark_results_random)
+```
+
+# Summarize results
+```{r}
+# Unique facotrs to missing views are now taken core of with detectPassengers befor imputation, THRESHOLD is at 0.03
+Models2Exclude <- NULL
+
+# collect results
+results_small <- lapply(results, function(df) {
+  # # take out imp_kNN_featurewise
+  # df <- filter(df, !modelName %in% Models2Exclude & method!="imp_kNN_featurewise")
+  # df$method <- as.character(df$method)
+  # df[df$method =="imp_kNN_samplewise",]$method <- "kNN"
+  # df
+  # take out imp_kNN_samplewise
+  df <- filter(df, !modelName %in% Models2Exclude & method!="imp_kNN_samplewise")
+  df$method <- as.character(df$method)
+  df[df$method =="imp_kNN_featurewise",]$method <- "kNN"
+  df
+  })
+
+# summarize results across runs
+summaries <- lapply(names(results_small), function(dfnm){
+  df <- results_small[[dfnm]]
+  df %<>% group_by(method, param_PercNA)
+  summaryDF <- df %>% dplyr::summarize(median_MSE = median(MSE), mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
+  summaryDF$se <- summaryDF$sd/sqrt(summaryDF$n)
+  summaryDF
+    
+    #take out guess (use Mean as baseline)
+    summaryDF %<>% filter(method!="Guess")
+})
+names(summaries) <- names(results_small)
+``` 
+
+# Plots
+```{r}
+# pdf("/Users/ricard/MOFA_CLL/imputation/singleview/out/asd.pdf", width = 5, height = 5, onefile = F)
+
+gg_summary_random <- ggplot(summaries[["random"]], aes(x=param_PercNA, y=median_MSE, col=method)) +
+  geom_point()  + 
+  xlab("Precentage of values missing") + ylab("Mean Squared Error") +
+  # geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
+  geom_errorbar(aes(ymin=median_MSE- 2*se, ymax=median_MSE + 2*se), width=.01) +
+  geom_line(aes(group=method)) + 
+  guides(col=F) + 
+  ylim(c(0.005,0.02)) +
+  theme_bw(base_size=18) +
+  theme(plot.title = element_text(size=rel(1)),
+        axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black"))
+
+print(gg_summary_random)
+
+# legend
+# if(view=="viab"){
+#   # gg_legend_sum <- ggplot(summaries[["random"]], aes(x=param_PercNA, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+#   gg_legend_sum <- ggplot(summaries[["random"]], aes(x=param_PercNA, y=median_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+# } else if (view=="expr"){
+#   # gg_legend_sum <- ggplot(summaries[["random"]], aes(x=param_PercNA, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+#   gg_legend_sum <- ggplot(summaries[["random"]], aes(x=param_PercNA, y=median_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+# }
+# gg_legend_sum <- get_legend(gg_legend_sum)
+
+# dev.off()
+```
+

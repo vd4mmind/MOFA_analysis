@@ -1,0 +1,92 @@
+---
+title: "MOFA imputation: disentangle signals per view"
+date: "14 August 2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# library(MOFAtools)
+library(data.table)
+library(purrr)
+library(ggplot2)
+```
+
+```{r}
+```
+
+```{r}
+modelsDir <- "/Users/ricard/data/CLL/out/imputation/missingAtRandom/7sep"
+# modelsDir <- "/Users/ricard/data/CLL/out/imputation/FullCases/7sep"
+dataDir <-"/Users/ricard/data/CLL/views/minView=all"
+```
+
+```{r}
+Y <- read.table("/Users/ricard/data/CLL/views/minView=all/viab.txt", header=T) %>% as.matrix %>% t
+```
+
+```{r}
+# missing_range <- unique(sapply(strsplit(list.files(modelsDir),"_"), function(x) x[[1]][1]))
+missing_range <- seq(0.1,0.75,by=0.05)
+ntrials <- 10
+
+# missing_range <- seq(20,75,by=5)
+# ntrials <- 20
+
+views <- c("viab","viabrna","viabmet","viabmut","viabmetrna","viabmetrnamut")
+# views <- c("viabrna","viabmet","viabmut","viabrnametmut")
+# views <- c("viabmut","viabrnamet","viabrnametmut")
+
+tmp <- 
+  rbind(
+    expand.grid(missing_range,1:ntrials) %>% as.data.table %>% setnames(c("missing","trial")) %>% .[,c("views","mse"):=list("viab",0)],
+    expand.grid(missing_range,1:ntrials) %>% as.data.table %>% setnames(c("missing","trial")) %>% .[,c("views","mse"):=list("viabrna",0)],
+    expand.grid(missing_range,1:ntrials) %>% as.data.table %>% setnames(c("missing","trial")) %>% .[,c("views","mse"):=list("viabmet",0)],
+    expand.grid(missing_range,1:ntrials) %>% as.data.table %>% setnames(c("missing","trial")) %>% .[,c("views","mse"):=list("viabmut",0)],
+    expand.grid(missing_range,1:ntrials) %>% as.data.table %>% setnames(c("missing","trial")) %>% .[,c("views","mse"):=list("viabmetrna",0)],
+    expand.grid(missing_range,1:ntrials) %>% as.data.table %>% setnames(c("missing","trial")) %>% .[,c("views","mse"):=list("viabmetrnamut",0)]
+  )
+
+for (m in missing_range) {
+  for (i in 1:ntrials) {
+    for (v in views) {
+      file <- paste0(modelsDir,"/",m,"_",v,"_",i,".hdf5")
+      if (file.exists(file)) {
+        model <- tryCatch({model <- loadModel(file, sortFactors = F)}, error=function(x){ return(0) })
+        if (class(model)=="MOFAmodel") {
+          idx <- which(is.na(getTrainData(model, views="viab")[[1]]), arr.ind = T)
+          model_i <- imputeMissing(model)
+          tmp[missing==m & trial==i & views==v, mse:=mean((Y[idx] - getImputedData(model_i, views="viab")[idx])**2)]
+        }
+      }
+    }
+  }
+}
+
+```
+
+```{r}
+
+# tmp2 <- tmp %>% .[mse>0] %>% .[,missing:=(missing/ncol(Y))]
+tmp2 <- tmp %>% .[mse>0]
+
+p <- ggplot(tmp2, aes(x=missing, y=mse)) +
+  stat_summary(aes(group=views, color=views), stat="summary", fun.y="mean", geom="line", size=1) +
+  stat_summary(aes(group=views, color=views), stat="summary", fun.data="mean_se", geom="errorbar", width=0.015, alpha=0.6) +
+  theme_bw() +
+  # labs(x="Fraction of samples masked", y="Mean squared error") +
+  labs(x="Fraction of values masked", y="Mean squared error") +
+  theme(
+    axis.title= element_text(size=rel(1.7)),
+    axis.text = element_text(color="black", size=rel(1.3))
+  )
+print(p)
+
+# pdf("/Users/ricard/MOFA_CLL/imputation/byView/out/fullcases.pdf", width = 7, height = 4.5)
+pdf("/Users/ricard/MOFA_CLL/imputation/byView/out/atrandom.pdf", width = 7, height = 4.5)
+print(p)
+dev.off()
+```
+
