@@ -110,11 +110,26 @@ clagree <- ifelse(clagree %in% c("M_M", "U_U"), "agreement with label",
                   ifelse(grepl("missing",clagree), "label missing",
                          ifelse(clagree=="M_U", "U-CLL clustered as M-CLL", "M-CLL clustered as U-CLL" )))
 df_clustering$agreement <- clagree
+
+# match to Patient Id
+# load("~/Documents/cll/var/encPatientID_160218.RData")
+# df_clustering$patID2 <- encPatientID$PatientID[match(df_clustering$patID, encPatientID$PatientID2)]
+# write.csv(df_clustering, file="IGHV_imputed.csv")
 ```
 
 Those samples are different:
 ```{r}
-filter(df_clustering, grepl("clustered",agreement)) %>% select(IGHV, ZIGHV, patID, Z, MC)
+# misclass_df <- filter(df_clustering, grepl("clustered",agreement)) %>% select(IGHV, ZIGHV, patID,patID2, Z, MC)
+# patmeta_pace <- patmeta
+# load("~/Documents/cll/var/patmeta_150609.RData")
+# patmeta_all <-patmeta
+# rm(patmeta)
+# df_meta <- cbind(df_clustering, patmeta_all[df_clustering$patID2,])
+# df_meta <- filter(df_meta, grepl("clustered",agreement))
+# df_meta <- df_meta[, grepl("IGHV|pat", colnames(df_meta)) |  colnames(df_meta)=="Z"]
+# write.csv(df_meta, file="missclassified_cases.csv")
+# patmeta <- patmeta_pace
+
 ```
 
 
@@ -148,6 +163,8 @@ bs <-beeswarm(df_clustering$Z, pwcol = col4bees, pch = 16,
           cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
 dev.off()    
 
+# ggplot(df_clustering, aes(x=1,y=Z, col=agreement, label=patID)) +ggbeeswarm::geom_beeswarm() +scale_color_manual(values=col4bees) 
+# plotly::ggplotly()
 ```
 
 

@@ -35,10 +35,23 @@ source("ImputeBenchmark.R")
 
 
 #In/Out options and define setting (ktype/view)
+<<<<<<< HEAD
 ```{r}
 ktype <- ""
 view <- "drug"
 run_date <- "1sep"
+=======
+Following runs are available:
+
+- viab 23Aug (no sparsity)
+- expr 24Aug (no sparsity)
+- viab 1Sep (sparsity)
+
+```{r}
+ktype <- "learnK" #k25
+view <- "viab"  #expr
+run_date <- "1Sep" #"23Aug" #24Aug
+>>>>>>> 6525c78003a732980f25bf1dc65d557c69fbe92a
 ```
 
 <!-- Output and Data directory -->
