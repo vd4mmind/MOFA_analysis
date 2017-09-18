@@ -1,14 +1,13 @@
 ---
 title: "GFA_Imputation_Figure"
-author: "Britta Velten"
-date: "5/30/2017"
 output:
   BiocStyle::html_document:
     toc: true
 ---
 
 ```{r, message=F, warning=F}
-library(MOFAtools)
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# library(MOFAtools)
 library(dplyr)
 library(reshape2)
 library(pheatmap)
@@ -20,10 +19,17 @@ library(grid)
 ```
 
 ```{r}
-source("../plottingUtils.R")
+# source("../plottingUtils.R")
+source("~/MOFA_CLL/utils/plottingUtils.R")
 ```
 
 # View and ktype options
+<<<<<<< HEAD
+```{r}
+ktype <- ""
+view <- "viab"
+run_date <- "6Sep"
+=======
 Following runs are available:
 
 - viab 23Aug (no sparsity)
@@ -34,6 +40,7 @@ Following runs are available:
 ktype <- "learnK" #k25
 view <- "viab"  #expr
 run_date <- "1Sep" #"23Aug" #24Aug
+>>>>>>> 6525c78003a732980f25bf1dc65d557c69fbe92a
 ```
 
 
@@ -76,7 +83,7 @@ summaries <- lapply(names(results_small), function(dfnm){
   if(dfnm=="full") df %<>% group_by(method, FullCasesMissing.mRNA) 
     else df %<>% group_by(method, pNA.mRNA) 
 }
-  summaryDF <- df %>% dplyr::summarize(mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
+  summaryDF <- df %>% dplyr::summarize(median_MSE = median(MSE), mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
   summaryDF$se <- summaryDF$sd/sqrt(summaryDF$n)
   summaryDF
   #take out guess (use Mean as baseline)
@@ -87,17 +94,21 @@ names(summaries) <- names(results_small)
 
 # Plots
 ```{r}
-pdf(paste("~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Imputation/ImputationFigures/Imputation_",view,"_",run_date,"_rmPassengers_",ktype,".pdf",sep=""), width=10, height = 5, onefile = F)
+# pdf(paste("~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Imputation/ImputationFigures/Imputation_",view,"_",run_date,"_rmPassengers_",ktype,".pdf",sep=""), width=10, height = 5, onefile = F)
+pdf(paste("/Users/ricard/MOFA_CLL/imputation/out/Imputation_",view,"_",run_date,"_rmPassengers_",ktype,".pdf",sep=""), width=10, height = 5, onefile = F)
 
 # random
 if(view=="viab"){
-  gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
+  # gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
+  gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=median_MSE, col=method)) + ylim(c(0.0075,0.02))
 } else if (view=="expr"){
-  gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) 
+  # gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) 
+  gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=median_MSE, col=method)) 
 }
 gg_summary_random <- gg_summary_random + geom_point()  + 
   xlab("Precentage of values missing") + ylab("Mean Squared Error") +
-  geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
+  # geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
+  geom_errorbar(aes(ymin=median_MSE- 2*se, ymax=median_MSE + 2*se), width=.01) +
   geom_line() +guides(col=F)+theme_bw(base_size=18) +
   theme(plot.title = element_text(size=rel(1)),
         axis.title= element_text(size=rel(0.85)),
@@ -105,14 +116,17 @@ gg_summary_random <- gg_summary_random + geom_point()  +
   ggtitle(paste("Values missing at random"))
 
 if(view=="viab"){
-  gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
+  gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=median_MSE, col=method)) + ylim(c(0.0075,0.02))
+  # gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
 } else if (view=="expr"){
-  gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.mRNA>1), aes(x=FullCasesMissing.mRNA, y=mean_MSE, col=method))
+  # gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.mRNA>1), aes(x=FullCasesMissing.mRNA, y=mean_MSE, col=method))
+  gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.mRNA>1), aes(x=FullCasesMissing.mRNA, y=median_MSE, col=method))
 }
 
 # full cases
 gg_summary_full <-gg_summary_full +
-    geom_errorbar(aes(ymin=mean_MSE-2*se, ymax=mean_MSE +2*se), width=1) +
+    # geom_errorbar(aes(ymin=mean_MSE-2*se, ymax=mean_MSE +2*se), width=1) +
+    geom_errorbar(aes(ymin=median_MSE-2*se, ymax=median_MSE +2*se), width=1) +
     geom_line() +guides(col=F) + theme_bw(base_size=18)+
     theme(plot.title = element_text(size=rel(1)),
           axis.title= element_text(size=rel(0.85)),
@@ -122,9 +136,11 @@ gg_summary_full <-gg_summary_full +
 
 # legend
 if(view=="viab"){
-  gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+  # gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+  gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=median_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
 } else if (view=="expr"){
-  gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+  # gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+  gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.mRNA, y=median_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
 }
 gg_legend_sum <- get_legend(gg_legend_sum)
 

@@ -10,12 +10,11 @@ library(ggplot2)
 library(magrittr)
 library(Hmisc)
 library(glmnet)
-library(pace)
 
 predictSurvival <- function(model){ 
 
 # get survival data
-data(patmeta)
+load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
 survivalData <- as.matrix(patmeta[,c("T5","treatedAfter")])
 survivalData <- survivalData[!is.na(survivalData[,1]),]
 colnames(survivalData)<-c("time", "status")

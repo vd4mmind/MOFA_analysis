@@ -1,0 +1,207 @@
+---
+title: "MOFA CLL: analysis of sparse versus non-sparse model"
+author: "Ricard Argelaguet"
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+library(data.table)
+library(purrr)
+library(ggplot2)
+```
+
+```{r}
+theme_fn <- function() {
+    theme(
+    # plot.title = element_text(size=titlesize),
+    plot.margin = margin(10,10,10,10),
+    axis.title.x=element_text(colour="black",size=rel(1.75), margin=margin(20,0,3,0)),
+    axis.title.y=element_text(colour="black",size=rel(1.75), margin=margin(0,20,0,3)),
+    axis.text.x=element_text(colour="black",size=rel(1.5)),
+    axis.text.y=element_text(colour="black",size=rel(1.5)),
+    axis.ticks.x = element_line(colour="black"),
+    axis.ticks.y = element_line(colour="black"),
+    axis.line.x = element_line(color="black"),
+    axis.line.y = element_line(color="black"),
+    legend.position="top",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+}
+```
+
+```{r}
+tmp <- read.csv("/Users/ricard/data/ensembl/human/v87/BioMart/mRNA/Hsapiens_genes_BioMart.87.txt", header=T, sep="\t", stringsAsFactors=F)
+gene_meta <- tmp$symbol; names(gene_meta) <- tmp$ens_id
+```
+
+<!-- Load sparse models -->
+```{r}
+in.folder <- "/Users/ricard/data/CLL/out/test_final/1Sep"
+files <- list.files(in.folder, pattern="^sparse.*hdf5$")
+sparse_models <- list()
+for (i in 1:length(files)) {
+  sparse_models[[i]] <- loadModel(paste0(in.folder,"/",files[i]))
+  # featureNames(sparse_models[[i]])[["mRNA"]] <- stringr::str_replace_all(featureNames(sparse_models[[i]])[["mRNA"]], gene_meta)
+}
+```
+
+<!-- Load non-sparse models -->
+```{r}
+in.folder <- "/Users/ricard/data/CLL/out/test_final/1Sep"
+files <- list.files(in.folder, pattern="^nonsparse.*hdf5$")
+nonsparse_models <- list()
+for (i in 1:length(files)) {
+  nonsparse_models[[i]] <- loadModel(paste0(in.folder,"/",files[i]))
+  # featureNames(nonsparse_models[[i]])[["mRNA"]] <- stringr::str_replace_all(featureNames(nonsparse_models[[i]])[["mRNA"]], gene_meta)
+}
+```
+
+<!-- Number of enriched pathways -->
+```{r}
+
+# Load reactome annotations
+reactome <- readRDS("/Users/ricard/data/reactome/v59/homo_sapiens/out/human_reactome.rds")
+tmp <- read.table("/Users/ricard/data/reactome/v59/homo_sapiens/AllPathways.txt", header=F, quote="", sep="\t", stringsAsFactors=F)[,c(1,2)]
+reactome_meta <- tmp[,2]; names(reactome_meta) <- tmp[,1]; rm(tmp)
+rownames(reactome) <- stringr::str_replace_all(rownames(reactome), reactome_meta)
+
+# Calculate number of enriched pathways for sparse models
+tmp_sparse <- data.table(type="sparse",trial=1:length(sparse_models)) %>% .[,"ngenesets":=0]
+for (i in 1:length(sparse_models)) {
+  npathways <- FeatureSetEnrichmentAnalysis(
+      sparse_models[[i]],
+      view = "mRNA",
+      factors = "all",
+      feature.sets = reactome,
+      local.statistic = "loading",
+      transformation = "abs.value",
+      global.statistic = "mean.diff",
+      statistical.test = "parametric",
+      min.size=15,
+      alpha=0.05)$pval.adj
+  
+  tmp_sparse[trial==i, ngenesets:=sum(npathways<0.1, na.rm=T)]
+}
+
+# Calculate number of enriched pathways for non-sparse models
+tmp_nonsparse <- data.table(type="nonsparse",trial=1:length(nonsparse_models)) %>% .[,"ngenesets":=0]
+for (i in 1:length(nonsparse_models)) {
+  npathways <- FeatureSetEnrichmentAnalysis(
+      nonsparse_models[[i]],
+      view = "mRNA",
+      factors = "all",
+      feature.sets = reactome,
+      local.statistic = "loading",
+      transformation = "abs.value",
+      global.statistic = "mean.diff",
+      statistical.test = "parametric",
+      min.size=15,
+      alpha=0.05)$pval.adj
+  
+  tmp_nonsparse[trial==i, ngenesets:=sum(npathways<0.1, na.rm=T)]
+}
+
+# Join
+tmp <- rbind(tmp_sparse, tmp_nonsparse)
+
+# Plot
+ggplot(tmp[ngenesets>0], aes(x=type, y=ngenesets)) +
+  geom_boxplot(aes(fill=type)) +
+  theme_bw()
+```
+
+<!-- Recovery of stress response factor -->
+```{r}
+tmp1 <- getWeights(sparse_models[[1]], view="mRNA")[[1]][,"5"] %>% abs %>% sort %>% tail
+tmp2 <- getWeights(nonsparse_models[[1]], view="mRNA")[[1]][,"5"] %>% abs %>% sort %>% tail
+
+tmp1
+tmp2
+
+showAllWeights(sparse_models[[2]], view="mRNA", factor="5", abs=T)
+showAllWeights(nonsparse_models[[2]], view="mRNA", factor="5", abs=T)
+```
+
+<!-- Plot likelihood -->
+```{r}
+# Extract weights from sparse models
+likelihood_sparse <- data.table(trial=1:length(sparse_models), loglikelihood=0, type="sparse")
+for (i in 1:length(sparse_models)) {
+  likelihood_sparse[trial==i, loglikelihood:=tail(sparse_models[[i]]@TrainStats$elbo_terms[,"Y"],n=1)]
+}
+likelihood_nonsparse <- data.table(trial=1:length(nonsparse_models), loglikelihood=0, type="nonsparse")
+for (i in 1:length(nonsparse_models)) {
+  likelihood_nonsparse[trial==i, loglikelihood:=tail(nonsparse_models[[i]]@TrainStats$elbo_terms[,"Y"],n=1)]
+}
+
+likelihood <- rbind(likelihood_sparse,likelihood_nonsparse)
+
+ggplot(likelihood, aes(x=type, y=loglikelihood)) +
+  geom_boxplot(aes(fill=type)) +
+  theme_bw()
+```
+
+<!-- Cumulative density function of weights -->
+```{r}
+
+# Extract weights from sparse models
+weights_sparse <- list()
+for (i in 1:length(sparse_models)) {
+  weights_sparse[[i]] <- getWeights(sparse_models[[i]], as.data.frame=T) %>% as.data.table %>% .[,"trial":=i]
+}
+weights_sparse <- rbindlist(weights_sparse) %>% .[,type:="sparse"]
+
+# Extract weights from non-sparse models
+weights_nonsparse <- list()
+for (i in 1:length(nonsparse_models)) {
+  weights_nonsparse[[i]] <- getWeights(nonsparse_models[[i]], as.data.frame=T) %>% as.data.table %>% .[,"trial":=i]
+}
+weights_nonsparse <- rbindlist(weights_nonsparse) %>% .[,type:="nonsparse"]
+
+# Join
+weights <- rbind(weights_sparse,weights_nonsparse)
+
+# Plot
+p <- ggplot(weights[factor=="1" & view=="mRNA"], aes(x=value)) +
+  stat_ecdf(aes(group=interaction(trial,type), color=type), geom = "step") +
+  theme_bw() +
+  guides(colour = guide_legend(override.aes = list(size=1.5))) +
+  scale_x_continuous(limits=c(-1,1)) +
+  labs(y="Cumulative density", x="Weights") +
+  theme(
+    plot.margin = margin(10,10,10,10),
+    axis.title.x=element_text(colour="black",size=rel(1.75), margin=margin(20,0,3,0)),
+    axis.title.y=element_text(colour="black",size=rel(1.75), margin=margin(0,20,0,3)),
+    axis.text.x=element_text(colour="black",size=rel(1.5)),
+    axis.text.y=element_text(colour="black",size=rel(1.5)),
+    axis.ticks.x = element_line(colour="black"),
+    axis.ticks.y = element_line(colour="black"),
+    axis.line.x = element_line(color="black"),
+    axis.line.y = element_line(color="black"),
+    legend.position="top",
+    legend.title = element_blank(),
+    legend.key = element_rect(fill = 'white', linetype='solid'),
+    legend.text = element_text(size=rel(1.5))
+    # legend.key.width = unit(1.5,"line"),
+    # legend.key.height = unit(2,"inch"),
+    # legend.key.size = unit(2,"inch"),
+  )
+print(p)
+
+# pdf("/Users/ricard/CLL/simulations/elementwise_sparsity/out/cdf.pdf", width=7, height=5, useDingbats = F)
+# print(p)
+# dev.off()
+
+```
+
+```{r}
+
+tmp <- getWeights(nonsparse_models[[1]], view="mRNA")
+```
+
