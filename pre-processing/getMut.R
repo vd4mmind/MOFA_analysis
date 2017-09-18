@@ -3,13 +3,13 @@
 # file: location of mutCOM object
 # pat2include: patients ids to include
 # minObs: only include feautres with at least so many occurences
+# outdir, directory to save output to
 
 
-getMut <- function(file, pat2include, minObs=3){
-  
+getMut<-function(file, pat2include, minObs=3, outdir){
   #Load object
-  nameObj<-load(file)
-  mut<-get(nameObj)
+  data("mutCOM", package = "PACEdata")
+  mut <- mutCOM
   mut<- channel(mut, "binary") %>% exprs
 
   #Exclude del13q14_bi and  _mon (only keeping _any)
@@ -24,8 +24,10 @@ getMut <- function(file, pat2include, minObs=3){
   #drop patients with no measurements
   mut<-mut[apply(mut,1,function(r) !all(is.na(r))),]
   
-  # save    
-  save(mut, file=file.path(outdir,"mut.RData"))
-  
-  return(mut)
+  #Save
+    save(mut, file=file.path(outdir,"mut.RData"))
+    # write.table(mut, file=file.path(outdir,"mut.txt"),
+    #             row.names=TRUE, col.names=TRUE, quote=F)
+    
+    return(mut)
   }

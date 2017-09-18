@@ -8,14 +8,16 @@
 
 getCovariates<-function(file, pat2include, cov2include, outdir){
   #Load object
-  nameObj <- load(file)
-  meta <- get(nameObj)
+  data("patmeta", package = "PACEdata")
+  meta <- patmeta
  
   #subset
   meta <- meta[pat2include,cov2include, drop=F]
   
   #Save
-  save(meta, file=file.path(outdir,"covariates.RData"))
-
-  return(meta)
+    save(meta, file=file.path(outdir,"covariates.RData"))
+    # write.table(meta, file=file.path(outdir,"meta.txt"),
+    #             row.names=TRUE, col.names=TRUE, quote=F)
+    
+    return(meta)
   }

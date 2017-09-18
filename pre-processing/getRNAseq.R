@@ -2,19 +2,14 @@
 # inputs:
 # file: location of RData object
 # pat2include: patients ids to include
-# minrs: minimum number of counts for a gene over all patietns to be included
-# AnnoFileList: named list of files Bimoart biotype annotation files
-# plotit: plot count distribution an minrs cut-off
-# outdir, directory to save output to
-# onlyCD19 include only CD19 selected samples
-# topmRNA number of top variable genes to include
-# noY: if true genes from Y chr are excluded
+# minrs= minimum number of counts for a gene over all patietns to be included
+# AnnoList named list of files Bimoart biotype annotation files
 
-getRNAseq <-function(file, pat2include, minrs=100, AnnoFileList, 
-                    plotit, outdir, onlyCD19=F, topmRNA=5000, noY=T){
+
+getRNAseq<-function(file, pat2include, minrs=100, AnnoFileList, 
+                    plotit, outdir, onlyCD19=T, topmRNA=10000, noY=T){
   #Load object
-  nameObj<-load(file)
-  dds<-get(nameObj)
+  data("dds", package = "PACEdata")
   
   #Subset to patients of interest
   dds<-dds[, colData(dds)$PatID %in% pat2include]
@@ -33,10 +28,13 @@ getRNAseq <-function(file, pat2include, minrs=100, AnnoFileList,
   colnames(dds)<-as.character(colData(dds)$PatID)
   
   #Select CD19 samples only
+  #THIS SHOULD BE DONE IF FILE IS NOT POINTING TO A BATCH CORRECTED DATA OBJECT
+  #Should be done before filtering....?
   if(onlyCD19) dds <- dds[, colData(dds)$RNAprep=="CD19+"]
   
+  
   #Get annotations can check no overlap
-  annoList <- lapply(AnnoFileList, function(file) read.csv(file = file,header=T,sep="\t",stringsAsFactors=F))
+  annoList<-lapply(AnnoFileList, function(file) read.csv(file = file,header=T,sep="\t",stringsAsFactors=F))
   stopifnot(!any(duplicated(Reduce(union, lapply(annoList, function(l) l$ens_id)))))
   
   #Remove Y chromosome genes
@@ -57,9 +55,5 @@ getRNAseq <-function(file, pat2include, minrs=100, AnnoFileList,
     dds_sub
   })
   names(dds_sub_list)<-names(annoList)
-
-  #save
-  save(dds_sub_list, file=file.path(outdir,"dds_list.RData"))
-  
   return(dds_sub_list)
 }
