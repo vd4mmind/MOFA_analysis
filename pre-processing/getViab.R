@@ -23,7 +23,7 @@ stripConc <- function (x)
 
 deckel <- function(x, lower = -Inf, upper = +Inf) ifelse(x<lower, lower, ifelse(x>upper, upper, x))
 
-getViab<-function(file, pat2include, 
+getViab<-function(pat2include, 
                   badDrugs=c( "D_008",  "D_025"), 
                   conc2include = 2:5,
                   targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 

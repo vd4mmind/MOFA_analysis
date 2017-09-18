@@ -6,7 +6,7 @@
 # outdir, directory to save output to
 
 
-getMut<-function(file, pat2include, minObs=3, outdir){
+getMut<-function(pat2include, minObs=3, outdir){
   #Load object
   data("mutCOM", package = "PACEdata")
   mut <- mutCOM

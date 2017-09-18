@@ -6,7 +6,7 @@
 # outdir, directory to save output to
 
 
-getCovariates<-function(file, pat2include, cov2include, outdir){
+getCovariates<-function(pat2include, cov2include, outdir){
   #Load object
   data("patmeta", package = "PACEdata")
   meta <- patmeta

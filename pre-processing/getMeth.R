@@ -6,7 +6,7 @@
 # outdir, directory to save output to
 
 
-getMeth<-function(file, pat2include, Frac2include=0.3, outdir, includeXYchr=T, methDataFile=NULL){
+getMeth<-function(pat2include, Frac2include=0.3, outdir, includeXYchr=T, methDataFile=NULL){
   #Load object
   data("methData", package = "PACEdata")
   meth <- methData

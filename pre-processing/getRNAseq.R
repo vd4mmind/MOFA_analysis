@@ -6,7 +6,7 @@
 # AnnoList named list of files Bimoart biotype annotation files
 
 
-getRNAseq<-function(file, pat2include, minrs=100, AnnoFileList, 
+getRNAseq<-function(pat2include, minrs=100, AnnoFileList, 
                     plotit, outdir, onlyCD19=T, topmRNA=10000, noY=T){
   #Load object
   data("dds", package = "PACEdata")
