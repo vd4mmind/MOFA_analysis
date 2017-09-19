@@ -271,6 +271,10 @@ Both models using PCs and no penalization as well as using all features with a r
   
   # add MOFA factors
   FeatureList$LF = Zcommon[,-1]
+  FeatureList$LF1 = Zcommon[,"1", drop=FALSE]
+  FeatureList$LF7 = Zcommon[,"7", drop=FALSE]
+  FeatureList$LF8 = Zcommon[,"8", drop=FALSE]
+  FeatureList$LF178 = Zcommon[,c("1","7","8")]
 
   # List of predictors usign all features
   FeatureList_all <- data_imputed
@@ -301,6 +305,11 @@ Both models using PCs and no penalization as well as using all features with a r
     colnames(concordanceCV) <- unique(cv_ix)
     HcDF_cox <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI")
     HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF", "MOFA factors", as.character(HcDF_cox$predictor))
+        HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF1", "factor 1", as.character(HcDF_cox$predictor))
+    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF7", "factor 7", as.character(HcDF_cox$predictor))
+    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF8", "factor 8", as.character(HcDF_cox$predictor))
+    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF178", "factors 1,7,8", as.character(HcDF_cox$predictor))
+
     HcDF_cox$survType <- ifelse(survType=="TTT", "Time to next treatment", "Overall Survival")
     HcDF_cox
 }) %>% bind_rows()
@@ -320,8 +329,8 @@ summaryHc
 ```{r}
 # define colors
 # cols4survival <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-cols4survival <- c("#E69F00","#D55E00","#009E73", "#56B4E9",  "#999999","#0072B2")
-names(cols4survival) <- c("Methylation", "Mutations","mRNA",  "Drugs", "all", "MOFA factors")
+cols4survival <- c("#E69F00","#D55E00","#009E73", "#56B4E9",  "#999999","#0072B2","#0072B2","#0072B2","#0072B2", "#0072B2")
+names(cols4survival) <- c("Methylation", "Mutations","mRNA",  "Drugs", "all", "MOFA factors", "factor 1", "factor 7", "factor 8", "factors 1,7,8")
 ```
 
 ## Main Plot 4(a): PCs as predictors
@@ -380,6 +389,35 @@ pdf(file.path(plotdir, "HarrelsC_TTT_supp.pdf"))
 dev.off()
 ```
 
+## Supp Plot X: PCs as predictors and single LF
+```{r}
+summaryHc_supp2 <- filter(summaryHc, survType == "Time to next treatment",
+                         predictors %in% c(names(data), "all", "MOFA factors", "factor 1","factor 7","factor 8","factors 1,7,8"))
+limits <- aes(ymax = summaryHc_supp2$x.mean + summaryHc_supp2$se,
+              ymin = summaryHc_supp2$x.mean - summaryHc_supp2$se)
+summaryHc_supp2$predictors <- factor(summaryHc_supp2$predictors,
+                                    levels =c("Methylation", "Mutations","mRNA",  "Drugs",
+                                               "all", "MOFA factors","factor 1","factor 7","factor 8","factors 1,7,8"))
+
+# barplot
+pdf(file.path(plotdir, "HarrelsC_TTT_supp2.pdf"))
+  ggplot(summaryHc_supp2, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
+    geom_bar(stat = "identity") + 
+   coord_cartesian(ylim = c(0.5,0.85)) +
+  # ggtitle(paste("Prediction of time to treatment"))+
+  scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + 
+  geom_errorbar(limits, position = "dodge", width = 0.25)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=18),
+        axis.text.y = element_text(size=18),
+         axis.title.y = element_text(size=18),
+        strip.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        legend.position= "none",
+        plot.title = element_text(size=20)) +
+  ylab("Harrell's C-index") + xlab("")
+dev.off()
+```
+
 
 # Kaplan-Meier plots
 ## all MOFA factors
@@ -416,7 +454,7 @@ for(survType in c("TTT", "OS")){
                         legend = "none",
                         legend.labs = c(paste("low LF", lfno), paste("high LF", lfno)),
                         xlab = xlab,
-                        ylab=ifelse(lfno==1, "Survival probability", ""),
+                        ylab=ifelse(lfno==1, "Survival probability (%)", ""),
                         title= paste("Factor", lfno)#,
                         # ggtheme = theme(axis.text =element_text(size=22),
                                         # axis.title = element_text(size=22),
