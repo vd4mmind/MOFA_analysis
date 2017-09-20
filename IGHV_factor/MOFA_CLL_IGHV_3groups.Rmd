@@ -108,6 +108,28 @@ anno_colors<- list(MC_label = c(col4MC, "missing" = "gray"),
                   agreement =colors_agreemet)
 ```
 
+# alternative 3(a) Beeswarm plots for k-means clusters
+```{r}
+# get methylation cluster and define colors
+# MC <- factor(covariates[,"MethylationCluster"], levels = c("LP", "IP", "HP"))
+# shape4bees <-  c(LP=15, IP=16, HP=17)
+# MCshapes <- shape4bees[MC]
+# MCshapes[is.na(MCshapes)] <- 18
+col4MC <- c(LP="navy", IP="darkgoldenrod", HP="darkred")
+MCcolors <- col4MC[ZMC]
+
+
+#make plot
+pdf(file.path(plotdir,"BeeswarmZMC.pdf"), width = 3, height = 5, useDingbats=F)
+par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+bs <-beeswarm(Z[,idx_ighv], pwcol = MCcolors, pch = 16,
+          ylab = paste("Factor", idx_ighv), xlab = "",
+          cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+legend("top", legend = c("LZ", "IZ", "HZ"), title = "Factor clusters", pch = 16, col = col4MC, ncol = 3,
+       inset=c(0,-0.2), cex=1.2, box.lwd = 0, box.col = "white")
+dev.off()    
+```
+
 
 ## S10(a): Beeswarm plots for MC colored by agreement with clincial label
 ```{r}
@@ -350,7 +372,7 @@ dfDrugsAv <- dfDrugsAv[order(dfDrugsAv$absMeanloading, decreasing = T)[1:ntop],]
 dfDrugsAv$drug <- factor(dfDrugsAv$drug, levels=rev(dfDrugsAv$drug))
 
 # Make plot
-pdf(file.path(plotdir,"drugweigths_IGHV.pdf"),width=7, height=5)
+pdf(file.path(plotdir,"drugweigths_IGHV.pdf"),width=7, height=5, useDingbats=F)
 ggplot(dfDrugsAv,aes(x=drug, y=absMeanloading, col= main_targets2)) +
     geom_point(size=3) +
     geom_segment(aes(xend=drug, yend=0), size=2) +
@@ -432,7 +454,8 @@ dev.off()
 ```{r}
   data(conctab, package="pace")
   groups = ZMC
-  groupnm = "predicted MC"
+  groups <- sub("P", "Z", groups)
+  groupnm = "clusters"
   drugResDF <- lapply(c("dasatinib", "AZD7762"), function(drugnm) {
     drugData2plot <-model@TrainData$Drugs[grepl(drugnm,rownames(model@TrainData$Drug)),]
     drugid <- rownames(drugs[drugs$name==drugnm, ])
@@ -455,7 +478,10 @@ dev.off()
     ylab("viability") +theme_bw(base_size = 21) + facet_wrap(~drug)+
     xlab(expression(paste("Concentration [",mu,"M]"))) #+ scale_x_reverse()
   if(is.null(groups)) p <- p + guides(col=F) else p <- p + guides(col=guide_legend(title =groupnm))
-  p <- p + scale_color_manual(values = anno_colors$MC_predicted, labels=c("LP", "IP", "HP")) +
+  
+  colors4groups <- anno_colors$MC_predicted
+  names(colors4groups) <- c("LZ", "IZ", "HZ")
+  p <- p + scale_color_manual(values = colors4groups, labels=c("LZ", "IZ", "HZ")) +
     ylim(c(0,1.05))
   pdf(file.path(plotdir, paste0("DrugResponseCurve_joint.pdf")), width = 6, height = 5, onefile = F)
   print(p + theme(legend.position = "top", axis.text = element_text(colour="black")) )
