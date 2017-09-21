@@ -324,8 +324,9 @@ knownGenes <- c("AKAP12", "ADAM29", "BCL7A", "CLECSF2", "FCGBP", "FLJ10884",
                 "CRY1", "PLD1", "BCL7A", "WNT9A")
 
 #plot top weights
-pdf(file.path(plotdir,"mRNAweigths_IGHV.pdf"),width=5, height=8)
-showTopWeightsAndColor(model, "mRNA", idx_ighv, nfeatures = ntop_mRNA, Features2color = knownGenes, scalePerView = T, col2highlight = "darkorange")
+pdf(file.path(plotdir,"mRNAweigths_IGHV.pdf"),width=5.6, height=8, useDingbats = FALSE)
+p <- showTopWeightsAndColor(model, "mRNA", idx_ighv, nfeatures = ntop_mRNA, Features2color = knownGenes, scalePerView = T, col2highlight = "darkorange", orderBySign = TRUE)
+p
 dev.off()                                                                                                                               
 ```
 
@@ -403,6 +404,7 @@ dev.off()
 ```{r}
 # get top genes and patient having RNAseq
 topGenes <- names(sort(abs(model@Expectations$SW$mRNA$E[,idx_ighv]), decreasing = T))[1:ntop_mRNA]
+topGenes <- topGenes[order(model@Expectations$SW$mRNA$E[topGenes,idx_ighv], decreasing = T)]
 patients2include <- colnames(data$mRNA)[apply(data$mRNA,2, function(p) !any(is.na(p)))]
 
 # annotate by IGHV factor 
