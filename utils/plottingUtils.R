@@ -12,7 +12,7 @@ get_legend<-function(gg){
 showTopWeightsAndColor <- function(model, view, factor, nfeatures = 5,
                                    manual_features=NULL, sign="positive", abs=TRUE,
                                    Features2color=NULL, col2highlight="red", maxL=NULL,
-                                   scalePerView=F) {
+                                   scalePerView=F, orderBySign=FALSE) {
   
   # Sanity checks
   if (class(model) != "MOFAmodel") stop("'model' has to be an instance of MOFAmodel")
@@ -28,8 +28,10 @@ showTopWeightsAndColor <- function(model, view, factor, nfeatures = 5,
   if(scalePerView) W$value <- W$value/max(abs(W$value))
   
   # Absolute value
+  W$value4order <- W$value
   if (abs) W$value <- abs(W$value)
-  
+  if(!orderBySign) W$value4order <- W$value
+
   if (sign=="positive") { W <- W[W$value>0,] } else if (sign=="negative") { W <- W[W$value<0,] }
   
   # Extract relevant features
@@ -39,7 +41,7 @@ showTopWeightsAndColor <- function(model, view, factor, nfeatures = 5,
   W <- W[W$feature %in% features,]
   
   # Sort according to loadings
-  W <- W[with(W, order(-value, decreasing = T)), ]
+  W <- W[with(W, order(-value4order, decreasing = T)), ]
   W$feature <- factor(W$feature, levels=W$feature)
   W$highlight <- ifelse(W$feature %in% Features2color, "highlighted", "other")
   
@@ -66,6 +68,7 @@ showTopWeightsAndColor <- function(model, view, factor, nfeatures = 5,
       #aspect.ratio = .7
     ) + scale_color_manual(values=c("highlighted"=col2highlight,"other"="black")) +
     guides(color=F)
+    if(orderBySign) p <- p +  ylim(0,max(W$value)+0.1)+ geom_text(label=ifelse(W$value4order>0, "+", "-"),y=max(W$value)+0.1, size=10)
   
   if(!is.null(maxL)) p <- p + ylim(0,maxL)
   
