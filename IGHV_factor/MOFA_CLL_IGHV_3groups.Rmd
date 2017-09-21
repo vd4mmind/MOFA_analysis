@@ -44,8 +44,10 @@ source("plottingUtils.R")
 # 3(a) Beeswarm plots for Methylation Cluster
 ```{r}
 # get methylation cluster and define colors
-MC <- factor(covariates[,"MethylationCluster"], levels = c("LP", "IP", "HP"))
-col4MC <- c(LP="navy", IP="darkgoldenrod", HP="darkred")
+MC <- covariates[,"MethylationCluster"]
+MC[is.na(MC)] <- "missing"
+MC <- factor(MC, levels = c("LP", "IP", "HP", "missing"))
+col4MC <- c(LP="navy", IP="darkgoldenrod", HP="darkred", "missing"="gray")
 MCcolors <- col4MC[MC]
 
 #make plot
@@ -54,7 +56,7 @@ par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
 bs <-beeswarm(Z[,idx_ighv], pwcol = MCcolors, pch = 16,
           ylab = paste("Factor", idx_ighv), xlab = "",
           cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
-legend("top", legend =  levels(MC), title = "Methylation Cluster", pch = 16, col = col4MC, ncol = 3,
+legend("top", legend =  levels(MC)[1:3], title = "Methylation Cluster", pch = 16, col = col4MC[1:3], ncol = 4,
        inset=c(0,-0.2), cex=1.2, box.lwd = 0, box.col = "white")
 dev.off()    
 ```
@@ -78,9 +80,10 @@ set.seed(32180)
 ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
 ZMC <- ZMC$cluster
 ZMC 
-table(paste(ZMC,MC))
-ZMC <- ifelse(ZMC==1, "HP", ifelse(ZMC==2, "LP", "IP"))
-
+# table(paste(ZMC,MC))
+# ZMC <- ifelse(ZMC==1, "HP", ifelse(ZMC==2, "LP", "IP"))
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+table(MC, ZMC)
 # collect labels and factor values in data-frame
 df_clustering <- data.frame(IGHV = as.factor(IGHV), ZMC = ZMC, 
                             MC = as.factor(MC), patID = rownames(Z),
