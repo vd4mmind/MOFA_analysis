@@ -7,11 +7,10 @@ output:
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE}
 devtools::load_all("/Users/ricard/mofa/MOFAtools")
-library(MOFAtools)
 library(data.table)
 library(purrr)
 library(ggplot2)
-source("/Users/ricard/CLL/biology/utils.R")
+source("/Users/ricard/MOFA_CLL/stress_factor/utils.R")
 ```
 
 
@@ -88,18 +87,18 @@ df = data.table(sample = sampleNames(model),
 ```{r}
 p <- showAllWeights(model, view="mRNA", factor=stress_factor, nfeatures = "all", abs=T, threshold = 2, main="")
 print(p)
-# pdf("/Users/ricard/CLL/ricard_analysis/out/stress/all_weights.pdf", width = 6.5, height = 5, useDingbats = F)
-# print(p)
-# dev.off()
+pdf("/Users/ricard/CLL/biology/out/stress/all_weights.pdf", width = 6.5, height = 5, useDingbats = F)
+print(p)
+dev.off()
 
 pdf("/Users/ricard/CLL/biology/out/stress/top_weights.pdf", width = 6.5, height = 5, useDingbats = F)
 showTopWeights(model, view="mRNA", factor=stress_factor, nfeatures=10, abs=T)
 dev.off()
 
-anno <- df[,c("sample","x","cluster")] %>% .[,x:=-x] %>% tibble::column_to_rownames("sample")
-pdf("/Users/ricard/CLL/biology/out/stress/heatmap_top.pdf", width = 7, height = 4.5, useDingbats = F)
-showDataHeatmap(model, view="mRNA", factor=stress_factor, nfeatures=6, include_weights = F, cluster_cols=F, cluster_rows=F, main="", show_rownames=T, show_colnames=F, annotation_col=anno, transpose=T)
-dev.off()
+# anno <- df[,c("sample","x","cluster")] %>% .[,x:=-x] %>% tibble::column_to_rownames("sample")
+# pdf("/Users/ricard/CLL/biology/out/stress/heatmap_top.pdf", width = 7, height = 4.5, useDingbats = F)
+# showDataHeatmap(model, view="mRNA", factor=stress_factor, nfeatures=6, include_weights = F, cluster_cols=F, cluster_rows=F, main="", show_rownames=T, show_colnames=F, annotation_col=anno, transpose=T)
+# dev.off()
 ```
 
 
@@ -139,8 +138,8 @@ drugWeights <- getExpectations(model,"SW","E")[["Drugs"]]
 rownames(drugWeights) <- paste(drugs[substr(rownames(drugWeights),1,5),"name"], substr(rownames(drugWeights),6,8), sep="")
 foo <- reshape2::melt(drugWeights, varnames=c("drugconc", "factor"), value.name="weight") %>% as.data.table
 
-# Scale weights
-foo[,weight:=abs(weight)] %>% .[,weight:=weight/max(weight), by="factor"]
+# Scale weights (before taking means)
+# foo[,weight:=abs(weight)] %>% .[,weight:=weight/max(weight), by="factor"]
 
 # Extract data
 colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
@@ -156,29 +155,27 @@ foobar <- merge(foo,bar, by="drugconc", allow.cartesian=TRUE) %>%
   .[,pathway:=drugs$pathway[match(drug, drugs$name)]] %>%
   setkey(drug)
 
+
 # Remove missing cases
 foobar <- foobar[complete.cases(foobar),]
 
 # Remove uninteresting drugs
-foobar <- foobar[!drug %in% c("everolimus","BAY 11-70","SGI-1776","sunitinib","chaetoglobosin A","chaetocin","vorinostat","TAE684","SGX-523","saracatinib","KU−60019","AZD7762","gefitinib","encorafenib","rabusertib")]
+foobar <- foobar[!drug %in% c("everolimus","BAY 11-70","SGI-1776","sunitinib","chaetoglobosin A","chaetocin","vorinostat","TAE684","SGX-523","saracatinib","KU−60019","AZD7762","gefitinib","encorafenib","rabusertib","ibrutinib","spebrutinib","CCT241533","afatinib","PRT06607 HCL")]
 
 # Remove uninteresting pathways 
 foobar <- foobar[!category %in% c("mTOR","NFkB","PIM","Angiogenesis","Cytoskeleton","Epigenome","ALK","MET","Cell cycle control","Other","HSP90","PI3K/AKT","JAK/STAT")]
 foobar$category <- factor(foobar$category, levels=unique(foobar$category))
 
-# Remove uninteresting factors
-foobar <- foobar[factor==stress_factor]
-
-# Sort by category
-setkey(foobar,category) %>% .[,drug:=factor(drug,levels=unique(drug))]
 ```
 
 <!-- Inspect weights in the drug response view -->
 ```{r dotplot_drugs, echo=FALSE}
-asd <- foobar[,.(weight=mean(weight)),by=c("drug","category","target","pathway")] %>%
-  .[,weight:=abs(weight)] %>% setkey(weight) %>% tail(n=20) %>% .[,drug:=factor(drug,levels=drug)]
+ndrugs <- 9
+asd <- foobar[factor==stress_factor] %>% .[,.(weight=mean(weight)),by=c("drug","category","target","pathway")] %>%
+  .[,weight:=abs(weight)] %>% .[,weight:=weight/max(weight)] %>% setkey(weight) %>% tail(n=ndrugs) %>% .[,drug:=factor(drug,levels=drug)]
 
-asd[,color:=sample_colors(length(unique(category)))[as.numeric(category)]]
+# Assign colors
+# asd[,color:=sample_colors(length(unique(category)))[as.numeric(category)]]
 
 p <- ggplot(asd, aes(x=drug, y=weight, color=category)) +
   geom_point() +
@@ -194,10 +191,10 @@ p <- ggplot(asd, aes(x=drug, y=weight, color=category)) +
     axis.title.x = element_text(size = rel(1.5), margin = margin(15,0,0,0)),
     axis.line = element_line(colour = "black", size = 0.5),
     axis.ticks = element_line(colour = "black", size = 0.5),
-    panel.border = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_blank(),
+    # panel.border = element_blank(),
+    # panel.grid.major = element_blank(),
+    # panel.grid.minor = element_blank(),
+    # panel.background = element_blank(),
     legend.key = element_rect(fill = "white"),
     legend.text = element_text(size=rel(1.2)),
     legend.title = element_text(size=rel(1.3)),
@@ -246,11 +243,13 @@ tmp[,conc:=factor(conc,levels=c("5","4","3","2","1"))]
 
 f <- function(x) { return(data.frame(y=mean(x), ymin=mean(x)-sd(x), ymax=mean(x)+sd(x))) }
 p <- ggplot(tmp, aes(x=conc, y=viab)) +
-  stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y="mean", geom="line", size=0.75)  +
+  stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y="mean", geom="line", size=1.5)  +
   stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data = mean_se, geom = "errorbar", width=0.5, alpha=0.5) +
   xlab("Concentration") + ylab("Cellular viability") +
   scale_color_manual(values=c("red","blue"), labels=c("HSP low","HSP high")) +
+  scale_y_continuous(expand=c(0.00,0.05)) +
   facet_wrap(~drug) +
+  theme_bw() + 
   theme(
     plot.title = element_text(size=rel(2.0), hjust=0.5),
     axis.text = element_text(size = rel(1), color = "black"),
@@ -259,10 +258,10 @@ p <- ggplot(tmp, aes(x=conc, y=viab)) +
     axis.title.x = element_text(size = rel(1.3), margin = margin(15, 0, 0, 0)),
     axis.line = element_line(colour = "black", size = 0.5),
     axis.ticks = element_line(colour = "black", size = 0.5),
-    panel.border = element_blank(),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_blank(),
+    # panel.border = element_blank(),
+    # panel.grid.major = element_blank(),
+    # panel.grid.minor = element_blank(),
+    # panel.background = element_blank(),
     legend.key = element_rect(fill = "white"),
     legend.position = "right",
     strip.text = element_text(size=rel(2.0)),

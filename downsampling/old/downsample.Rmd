@@ -1,0 +1,141 @@
+---
+title: "MOFA Simulations: learning K"
+author: "Ricard Argelaguet"
+date: "`r Sys.Date()`"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+library(MOFAtools)
+library(data.table)
+library(purrr)
+library(ggplot2)
+```
+
+```{r}
+theme_fn <- function() {
+    theme(
+    # plot.title = element_text(size=titlesize),
+    plot.margin = margin(10,10,10,10),
+    axis.title.x=element_text(colour="black",size=rel(1.75), margin=margin(20,0,3,0)),
+    axis.title.y=element_text(colour="black",size=rel(1.75), margin=margin(0,20,0,3)),
+    axis.text.x=element_text(colour="black",size=rel(1.5)),
+    axis.text.y=element_text(colour="black",size=rel(1.5)),
+    axis.ticks.x = element_line(colour="black"),
+    axis.ticks.y = element_line(colour="black"),
+    axis.line.x = element_line(color="black"),
+    axis.line.y = element_line(color="black"),
+    legend.position="none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+}
+```
+
+<!-- Load downsampling models -->
+```{r}
+in.folder <- "/Users/ricard/data/CLL/out/downsample"
+files <- list.files(in.folder, pattern=".hdf5$")
+models <- list()
+for (i in 1:length(files)) {
+  split <- strsplit(files[i],"_")[[1]]
+  N <- split[2]
+  trial <- substr(split[[3]],1,nchar(split[[3]])-5)
+  models[[paste(N,trial,sep="_")]] <- loadModel(paste0(in.folder,"/",files[i]))
+}
+```
+
+
+<!-- Fraction of variance explained -->
+```{r}
+
+views <- c("mRNA","meth","viab")
+tmp <- data.table(
+  Nmasked=substr(sapply(strsplit(names(models),"_"),"[[",1),2,nchar(sapply(strsplit(names(models),"_"),"[[",1))),
+  trial=sapply(strsplit(names(models),"_"),"[[",2),
+  mRNA=0,
+  meth=0,
+  viab=0
+)
+
+for (i in names(models)) {
+  split <- strsplit(i,"_")[[1]]
+  N <- substr(split[1],2,nchar(split[1]))
+  t <- split[2]
+  r2 <- calculateVarianceExplained(models[[i]], plotit=F)$R2Total
+  tmp[Nmasked==N & trial==t, mRNA:=r2["mRNA"]]
+  tmp[Nmasked==N & trial==t, meth:=r2["meth"]]
+  tmp[Nmasked==N & trial==t, viab:=r2["viab"]]
+}  
+
+tmp <- melt(tmp, id.vars=c("Nmasked","trial"), measure.vars=c("mRNA","meth","viab"), variable.name="view", value.name="r2")
+ggplot(tmp, aes(x=Nmasked, y=r2)) +
+  geom_boxplot() +
+  facet_wrap(~view) +
+  # scale_y_continuous(limits=c(0,30)) +
+  labs(x="", y="Proportion of variance explained") +
+  theme_fn()
+
+```
+
+<!-- Quality of IGHV classification -->
+```{r}
+ighv <- read.table("/Users/ricard/data/CLL/views/minView=all/mut.txt", header = T, sep=" ")[,"IGHV"]
+  
+tmp <- data.table(
+  Nmasked=as.numeric(substr(sapply(strsplit(names(models),"_"),"[[",1),2,nchar(sapply(strsplit(names(models),"_"),"[[",1)))),
+  trial=sapply(strsplit(names(models),"_"),"[[",2),
+  ighv_r=999
+) %>% setkey(Nmasked)
+
+for (i in names(models)) {
+  split <- strsplit(i,"_")[[1]]
+  N <- as.numeric(substr(split[1],2,nchar(split[1])))
+  t <- split[2]
+  r <- max(abs(cor(getFactors(models[[i]]),ighv, use="complete.obs")))
+  tmp[Nmasked==N & trial==t, ighv_r:=r]
+}
+
+ggplot(tmp, aes(x=Nmasked, y=ighv_r)) +
+  geom_point() +
+  # scale_y_continuous(limits=c(0,30)) +
+  labs(x="Number of masked samples", y="Correlation with true IGHV status") +
+  theme_fn()
+```
+
+<!-- Robustness of the latent factors across trials -->
+```{r}
+
+```
+
+<!-- Quality of the latent factors -->
+We take the model with no masked samples as the ground truth and we compare the downsampled models to it
+```{r}
+
+tmp <- data.table(
+  Nmasked=substr(sapply(strsplit(names(models),"_"),"[[",1),2,2),
+  trial=sapply(strsplit(names(models),"_"),"[[",2),
+  r=999
+)
+
+true_Z <- getFactors(models[["0"]])
+for (i in names(models)) {
+  split <- strsplit(i,"_")[[1]]
+  N <- substr(split[1],2,2)
+  t <- split[2]
+  Z <- getFactors(models[[i]])
+  # tmp[Nmasked==N & trial==t, r:=(sum(abs(cor(Z,true_Z) - diag(ncol(Z)))))]
+}  
+
+# ggplot(k_dt, aes(x=true_k, y=infered_k)) +
+#   geom_point() +
+#   # scale_y_continuous(limits=c(0,30)) +
+#   labs(x="Number of true factors", y="Number of infered factors") +
+#   theme_fn()
+
+```
+

@@ -1,0 +1,109 @@
+---
+title: "MOFA: Assessment of the continuity of IGHV factor in the mRNA data"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r}
+# devtools::load_all("/homes/ricard/mofa/MOFAtools")
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# library(MOFAtools)
+library(data.table)
+library(purrr)
+library(ggplot2)
+```
+
+```{r}
+theme_fn <- function() {
+  theme(
+    axis.title= element_text(size=rel(1.7)),
+    axis.text = element_text(color="black", size=rel(1.3))
+    )
+}
+```
+
+
+<!-- Load models without mRNA data -->
+```{r}
+in.folder <- "/Users/ricard/data/CLL/out/continuity"
+files <- list.files(in.folder, pattern="model_noexpr.*\\.hdf5$")
+
+ntrials <- 25
+
+models <- list()
+for (i in 1:ntrials) {
+  if (file.exists(paste0(in.folder,"/model_noexpr",i,".hdf5"))) {
+    models[[i]] <- loadModel(paste0(in.folder,"/model_noexpr",i,".hdf5"), sortFactors = T)
+  }
+}
+models <- Filter(Negate(is.null), models)
+```
+
+<!-- Load patient survival metadata -->
+```{r load_patient_meta, echo=FALSE}
+load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
+patmeta <- patmeta[sampleNames(models[[1]]),] %>% tibble::rownames_to_column("sample") %>% as.data.table %>% .[,c("sample","IGHV","MethylationCluster")] %>% setnames("IGHV","ighv_status")
+```
+
+<!-- Collect mRNA data -->
+```{r}
+exprData <- read.table("/Users/ricard/data/CLL/views/minView=2/mRNA.txt", header = T)
+
+# Replace ensembl IDs by gene symbols
+tmp <- read.csv("/Users/ricard/data/ensembl/human/v87/BioMart/mRNA/Hsapiens_genes_BioMart.87.txt", header=T, sep="\t", stringsAsFactors=F)
+gene_meta <- tmp$symbol; names(gene_meta) <- tmp$ens_id
+colnames(exprData) <- stringr::str_replace_all(colnames(exprData), gene_meta)
+
+# Convert to data.table
+exprData <- exprData %>% as.data.table(keep.rownames=T) %>% setnames("rn","sample") %>%
+  melt(id.vars="sample", variable.name="gene", value.name="expr")
+```
+
+
+<!-- Collect IGHV factor from the models (it is always factor 1) -->
+TO-DO: CHECK THE CORRELATION BETWEEN THE FACTOR AND IGHV STATUS
+```{r}
+ighv_factor <- list()
+for (i in 1:length(models)) {
+  tmp <- getFactors(models[[i]], factors="1", as.data.frame=T)
+  tmp$trial <- i
+  ighv_factor[[i]] <- tmp
+}
+ighv_factor <- rbindlist(ighv_factor) %>% .[,factor:=NULL] %>% merge(patmeta,by="sample")
+```
+
+<!-- Scatterplot between IGHV factor and gene expression markers -->
+Note: each trial contains a rotated version of IGHV factor, we should align them first before plotting mutltiple trials
+TO-DO: COLOR USING THREE CLUSTERS
+```{r}
+interesting_genes <- c("ZNF667","SEPT10","LPL","PLD1","CRY1","BCL7A","ADAM29","WNT9A")
+for (x in interesting_genes) {
+  tmp <- exprData[gene==x]
+  foo <- merge(tmp,ighv_factor,by="sample", allow.cartesian = T) %>% setnames("value","ighv_factor") %>% .[complete.cases(MethylationCluster)]
+  
+  p <- ggplot(foo[trial%in%c(3)], aes(x=ighv_factor, y=expr)) +
+    geom_point(aes(color=MethylationCluster), size=1.25) +
+    stat_smooth(method="lm") +
+    theme_bw()
+  print(p)
+  
+  p <- ggplot(foo[trial%in%c(3)], aes(x=MethylationCluster, y=expr)) +
+    geom_boxplot(aes(fill=MethylationCluster)) +
+    theme_bw()
+  print(p)
+  
+}
+```
+
+
+
+
+```{r}
+
+pdf("/Users/ricard/MOFA_CLL/continuity/out/XX.pdf", width = 8.5, height = 5, useDingbats = F)
+print(p)
+dev.off()
+
+```
+

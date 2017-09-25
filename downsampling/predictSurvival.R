@@ -14,7 +14,8 @@ library(glmnet)
 predictSurvival <- function(model){ 
 
 # get survival data
-load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
+# load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
+load("/hps/nobackup/stegle/users/ricard/CLL/pace/data/patmeta.RData")
 survivalData <- as.matrix(patmeta[,c("T5","treatedAfter")])
 survivalData <- survivalData[!is.na(survivalData[,1]),]
 colnames(survivalData)<-c("time", "status")
