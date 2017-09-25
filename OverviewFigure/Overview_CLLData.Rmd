@@ -44,7 +44,7 @@ molten_ovw <- melt(ovw, varnames =c("PatID", "omic"))
 
 # order omic and patients
 molten_ovw$omic <- factor(molten_ovw$omic, levels = rev(c("Mutations", "Methylation", "Drug response", "mRNA")))
-molten_ovw$PatID <- factor(molten_ovw$PatID, levels = rownames(ovw)[order(rowSums(ovw[,-1]), decreasing = T)])
+molten_ovw$PatID <- factor(molten_ovw$PatID, levels = rownames(ovw)[order(rowSums(ovw), decreasing = T)])
 
 # number of patients and features
 molten_ovw$combi <- ifelse(molten_ovw$value, as.character(molten_ovw$omic), "missing")
