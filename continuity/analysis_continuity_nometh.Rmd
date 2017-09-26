@@ -1,5 +1,5 @@
 ---
-title: "MOFA: Assessment of the continuity of IGHV factor in the mRNA data"
+title: "MOFA: Assessment of the continuity of IGHV factor in the meth data"
 output:
   BiocStyle::html_document:
     toc: true
@@ -56,7 +56,7 @@ col4MC <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
 patmeta  %<>% merge(ZMC,by="sample") 
 ```
 
-# Load mRNA data 
+# Load meth data 
 ```{r}
 methData <- read.table("~/Documents/MOFA/CLL_MOFA_data/views/minView=2/meth.txt", header = T)
 
@@ -71,24 +71,38 @@ methData <- methData %>% as.data.table(keep.rownames=T) %>%
 TO-DO: CHECK THE CORRELATION BETWEEN THE FACTOR AND IGHV STATUS
 ```{r}
 ighv_factor <- list()
+models <- c( models, model)
 for (i in 1:length(models)) {
   tmp <- getFactors(models[[i]], factors="1", as.data.frame=T)
   tmp$trial <- i
+  if(i==length(models)) tmp$trial <- "full"
   tmp %<>% merge(patmeta,by="sample")
   # Align IGHV factors
   fit <- glm(factor(tmp$ighv_status, levels=c("U", "M")) ~ tmp$value, family="binomial")
+  print(summary(fit))
   if(fit$coefficients[2]<0) tmp %<>% mutate(value = -value)
   
   set.seed(32180)
   ZMC_sub <- kmeans(tmp$value, 3, nstart=1000, iter.max = 1000)
   ZMC_sub <- ZMC_sub$cluster
-  ZMC_sub <- ifelse(ZMC_sub==1, "HZ", ifelse(ZMC_sub==2, "LZ", "IZ"))
+  perms <- permute::allPerms(1:3)
+  tt <- table(tmp$MethylationCluster, ZMC_sub)
+  xx <- which.max(apply(perms,1, function(x) sum(sapply(1:3, function(i) tt[i,x[i]]))))
+  order2use <- perms[xx,]
+  
+  ZMC_sub <- ifelse(ZMC_sub==order2use[1], "HZ", ifelse(ZMC_sub==order2use[3], "LZ", "IZ"))
   tmp$ZMC_sub <- ZMC_sub
   print(sum(tmp$ZMC_sub != tmp$ZMC))
   
   ighv_factor[[i]] <- tmp
 }
 ighv_factor <- rbindlist(ighv_factor) %>% .[,factor:=NULL]
+
+ggplot(ighv_factor, aes(y=value, x=1, col=ZMC, shape=ZMC_sub)) + geom_jitter() + facet_wrap(~trial)
+ighv_factor_mat <- reshape2::acast(ighv_factor, sample ~ trial)
+cor(ighv_factor_mat)
+
+ighv_factor <- filter(ighv_factor, trial != "full")
 ```
 
 
@@ -102,7 +116,7 @@ plist <- lapply(interesting_CpG, function(x) {
   tmp <- filter(methData,CpG==x)
   foo <- merge(tmp,ighv_factor,by="sample", allow.cartesian = T) %>% setnames("value","ighv_factor")
   
-  p <- ggplot(filter(foo, trial==1), aes(x=ighv_factor, y=Mvalue, group=trial, shape=as.factor(trial))) +
+  p <- ggplot(filter(foo, trial==4), aes(x=ighv_factor, y=Mvalue, group=trial, shape=as.factor(trial))) +
     geom_point(aes(color=ZMC), size=1.25) +
     stat_smooth(method="lm") +
     theme_bw() + ylab(x) +guides(color=F, shape=F)+

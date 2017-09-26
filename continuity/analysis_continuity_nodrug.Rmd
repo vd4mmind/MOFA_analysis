@@ -1,5 +1,5 @@
 ---
-title: "MOFA: Assessment of the continuity of IGHV factor in the mRNA data"
+title: "MOFA: Assessment of the continuity of IGHV factor in the drug data"
 output:
   BiocStyle::html_document:
     toc: true
@@ -56,7 +56,7 @@ col4MC <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
 patmeta  %<>% merge(ZMC,by="sample") 
 ```
 
-# Load mRNA data 
+# Load drug data 
 ```{r}
 drugData <- read.table("~/Documents/MOFA/CLL_MOFA_data/views/minView=2/viab.txt", header = T)
 
