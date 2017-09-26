@@ -1,142 +1,123 @@
 ---
-title: "MOFA: Assessment of the continuity of IGHV factor"
+title: "MOFA: Assessment of the continuity of IGHV factor in the mRNA data"
 output:
   BiocStyle::html_document:
     toc: true
 ---
 
 ```{r}
-# devtools::load_all("/homes/ricard/mofa/MOFAtools")
-devtools::load_all("/Users/ricard/mofa/MOFAtools")
-# library(MOFAtools)
+library(MOFAtools)
 library(data.table)
 library(purrr)
+library(magrittr)
+library(dplyr)
 library(ggplot2)
-source("/Users/ricard/MOFA_CLL/stress_factor/utils.R")
+library(gridExtra)
 ```
 
+
+
+#Load base model
 ```{r}
-theme_fn <- function() {
-  theme(
-    axis.title= element_text(size=rel(1.7)),
-    axis.text = element_text(color="black", size=rel(1.3))
-    )
-}
+load("../out_import_technical.RData")
+idx_ighv <- "1"
 ```
 
-
-<!-- Load models without drug response -->
+# Load models without drug data 
 ```{r}
-in.folder <- "/Users/ricard/data/CLL/out/continuity"
-files <- list.files(in.folder, pattern=".hdf5$")
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/cont_IGHV/Figures"
+if(!dir.exists(plotdir)) dir.create(plotdir)
 
-ntrials <- 25
+in.folder <- "~/Documents/MOFA/CLL_MOFA_data/out/continuity"
 
-models <- list()
-for (i in 1:ntrials) {
-  models[[i]] <- loadModel(paste0(in.folder,"/model",i,".hdf5"), sortFactors = T)
-}
-
+files <- list.files(in.folder, pattern="model_nodrug.*\\.hdf5$")
+models <- lapply(files, function(fnm) loadModel(file.path(in.folder,fnm), sortFactors = T))
 ```
 
-<!-- Load patient survival metadata -->
+# Load patient  data
 ```{r load_patient_meta, echo=FALSE}
-load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
-patmeta <- patmeta[sampleNames(models[[1]]),] %>% tibble::rownames_to_column("sample") %>% as.data.table %>% .[,c("sample","IGHV")] %>% setnames("IGHV","ighv_status")
-# survivalDataTTT <- patmeta[,c("sample","IGHV","T5","treatedAfter")] %>% .[,IGHV:=as.factor(IGHV)]
-# survivalDataOS <-  patmeta[,c("sample","IGHV","T6","died")] %>% .[,IGHV:=as.factor(IGHV)]
-# colnames(survivalDataOS) <- colnames(survivalDataTTT) <- c("sample","IGHV","time", "status")
+data(patmeta, package="PACEdata")
+patmeta <- patmeta[sampleNames(models[[1]]),] %>%
+  tibble::rownames_to_column("sample") %>%
+  as.data.table %>% .[,c("sample","IGHV","ConsClust")] %>%
+  setnames("IGHV","ighv_status") %>%
+  setnames("ConsClust","MethylationCluster")
 ```
 
-
-<!-- Collect drug response data -->
+# Get our clusters from base model and define colors
 ```{r}
-load("/Users/ricard/data/CLL/pace/data/drugs.RData")
-
-drugData <- getViab(
-  file = "/Users/ricard/data/CLL/pace/data/lpdAll.RData",
-  pat2include = sampleNames(models[[1]]),
-  badDrugs=c("D_008","D_025"), 
-  conc2include = 1:5,
-  targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 
-  conc4targeted = 1:5,
-  chemoDrugs = c("D_006", "D_159", "D_010"),
-  conc4chemo = 1:5,
-  effectNum = 4,
-  effectVal = 0.7,
-  viab = 0.6, 
-  maxval = 1.1,
-  outdir = "/tmp"
-)
-
-
-# Remove ranges
-drugData <- drugData[,!stringr::str_detect(colnames(drugData),":")]
-
-# Extract weights
-# drugWeights <- getExpectations(model,"SW","E")[["Drugs"]]
-# rownames(drugWeights) <- paste(drugs[substr(rownames(drugWeights),1,5),"name"], substr(rownames(drugWeights),6,8), sep="")
-# foo <- reshape2::melt(drugWeights, varnames=c("drugconc", "factor"), value.name="weight") %>% as.data.table
-
-# Extract data
-colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
-drugData <- reshape2::melt(drugData, varnames=c("sample", "drugconc"), value.name="viab") %>% as.data.table %>%
-  .[,drugconc:=as.character(drugconc)] %>%
-  .[,drug:=sapply(strsplit(drugconc, "_"), function(l) l[1])] %>%
-  .[,conc:=sapply(strsplit(drugconc, "_"), function(l) l[2])] %>%
-  .[,category:=drugs$target_category[match(drug, drugs$name)]] %>%
-  .[,target:=drugs$main_targets[match(drug, drugs$name)]] %>%
-  .[,pathway:=drugs$pathway[match(drug, drugs$name)]]
-
-# Remove outliers
-drugData <- drugData[viab<=1.5,]
-
-# Remove missing cases
-drugData <- drugData[complete.cases(drugData),]
+set.seed(32180)
+ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
+ZMC <- ZMC$cluster
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+ZMC <- as.data.table(ZMC, keep.rownames=TRUE) %>% setnames("rn", "sample")
+col4MC <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
+patmeta  %<>% merge(ZMC,by="sample") 
 ```
 
-<!-- Collect IGHV factor -->
+# Load mRNA data 
+```{r}
+drugData <- read.table("~/Documents/MOFA/CLL_MOFA_data/views/minView=2/viab.txt", header = T)
+
+# get proper drug names
+data("drugs", package="pace")
+colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"],substr(colnames(drugData),6,8), sep="")
+
+# Convert to data.table
+drugData <- drugData %>% as.data.table(keep.rownames=T) %>% 
+  setnames("rn","sample") %>%
+  melt(id.vars="sample", variable.name="drug", value.name="viability")
+drugData$drug_conc <- as.character(drugData$drug)
+drugData %<>% mutate(drug=sapply(drug_conc, function(x) strsplit(x,"_")[[1]][1]),
+                     concentration=sapply(drug_conc, function(x) strsplit(x,"_")[[1]][2]))
+```
+
+
+# Collect IGHV factor from the models (it is always factor 1)
 TO-DO: CHECK THE CORRELATION BETWEEN THE FACTOR AND IGHV STATUS
 ```{r}
-
 ighv_factor <- list()
-for (i in 1:ntrials) {
+for (i in 1:length(models)) {
   tmp <- getFactors(models[[i]], factors="1", as.data.frame=T)
   tmp$trial <- i
+  tmp %<>% merge(patmeta,by="sample")
+  # Align IGHV factors
+  fit <- glm(factor(tmp$ighv_status, levels=c("U", "M")) ~ tmp$value, family="binomial")
+  if(fit$coefficients[2]<0) tmp %<>% mutate(value = -value)
+  
+  set.seed(32180)
+  ZMC_sub <- kmeans(tmp$value, 3, nstart=1000, iter.max = 1000)
+  ZMC_sub <- ZMC_sub$cluster
+  ZMC_sub <- ifelse(ZMC_sub==1, "HZ", ifelse(ZMC_sub==2, "LZ", "IZ"))
+  tmp$ZMC_sub <- ZMC_sub
+  print(sum(tmp$ZMC_sub != tmp$ZMC))
+  
   ighv_factor[[i]] <- tmp
 }
-ighv_factor <- rbindlist(ighv_factor) %>% .[,factor:=NULL] %>% merge(patmeta,by="sample")
-
-```
-
-<!-- Scatterplot between IGHV factor and drug response data -->
-Note: each trial contains a rotated version of IGHV factor, we should align them first before plotting mutltiple trials
-TO-DO: COLOUR USING THREE CLUSTERS
-```{r, fig.height=4, fig.width=13}
-interesting_drugs <- c("dasatinib", "AT13387","AZD7762")
-# drugData_filt <- drugData[drug%in%interesting_drugs]
-for (x in interesting_drugs) {
-  tmp <- drugData[drug==x] %>% .[,c("category","target","pathway","drugconc"):=NULL]
-  foo <- merge(tmp,ighv_factor,by="sample", allow.cartesian = T) %>% setnames("value","ighv_factor")
-  p <- ggplot(foo[trial%in%c(2)], aes(x=ighv_factor, y=viab)) +
-    geom_point(aes(color=ighv_status), size=0.75) +
-    stat_smooth(method="lm") +
-    # stat_summary(fun.y="mean", geom="line", size=1) +
-    # stat_summary(fun.data="mean_se", geom="errorbar", width=0.01, alpha=0.6) +
-    facet_wrap(~conc, nrow = 1, scales = "free_y") +
-    theme_bw()
-  print(p)
-}
+ighv_factor <- rbindlist(ighv_factor) %>% .[,factor:=NULL]
 ```
 
 
-
-
+# Scatterplot between IGHV factor and gene expression markers
+Only use one trial, as they are all very similar
 ```{r}
+interesting_drugs <- c("dasatinib","AZD7762","tamatinib")
 
-pdf("/Users/ricard/MOFA_CLL/continuity/out/XX.pdf", width = 8.5, height = 5, useDingbats = F)
-print(p)
+plist <- lapply(interesting_drugs, function(x) {
+  tmp <- filter(drugData,drug==x, concentration ==2)
+  foo <- merge(tmp,ighv_factor,by="sample", allow.cartesian = T) %>% setnames("value","ighv_factor")
+  
+  p <- ggplot(filter(foo, trial==1), aes(x=ighv_factor, y=viability, group=trial, shape=as.factor(trial))) +
+    geom_point(aes(color=ZMC), size=1.25) +
+    stat_smooth(method="lm") +
+    theme_bw() + ylab(x) +guides(color=F, shape=F)+
+    scale_color_manual(values = col4MC) +xlab("IGHV-Factor")
+  p
+})
+
+pdf(file.path(plotdir,"Cont_IGHV_noDrugs.pdf"), width = 6, height = 2, useDingbats=F)
+grid.arrange(plist[[1]],plist[[2]],plist[[3]], ncol=3)
+# do.call(grid.arrange, plist)
 dev.off()
-
 ```
-
