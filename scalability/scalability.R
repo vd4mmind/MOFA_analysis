@@ -1,7 +1,7 @@
 library(plyr)
 library(ggplot2)
 
-res_dir = '/Users/ricard/CLL/scalability'
+res_dir = '/Users/ricard/MOFA_CLL/scalability'
 
 D = read.table(paste(res_dir, 'results/D.txt', sep='/'), header=FALSE)
 M = read.table(paste(res_dir, 'results/M.txt', sep='/'), header=FALSE)
@@ -27,10 +27,11 @@ tmp = rbind(D, M)
 tmp = rbind(tmp,  K)
 all = rbind(tmp,  N)
 
-sd_error_bars = aes(ymax = time_mean + sd, ymin=time_mean - sd)
+ntrials <- 5
+sd_error_bars = aes(ymax = time_mean + 2*sd/ntrials, ymin=time_mean - 2*sd/ntrials)
 
 p <- ggplot(all, aes(x=val, y=time_mean)) +
-    geom_errorbar(sd_error_bars, width=.3, position=position_dodge(width=.9), alpha=0.25 ) +
+    geom_errorbar(sd_error_bars, width=0, position=position_dodge(width=.9), alpha=0.25 ) +
     geom_point(alpha=0.7, size=1.1) +
     geom_smooth(method='lm', alpha=0.25) +
     facet_wrap(~param, scales='free') +
@@ -43,6 +44,6 @@ p <- ggplot(all, aes(x=val, y=time_mean)) +
     )
 print(p)
 
-pdf("/Users/ricard/CLL/scalability/out/scalability.pdf")
+pdf("/Users/ricard/MOFA_CLL/scalability/out/scalability.pdf")
 print(p)
 dev.off()
