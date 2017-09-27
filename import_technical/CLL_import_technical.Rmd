@@ -88,6 +88,17 @@ modelidx
 model <- AllModels[[modelidx]]
 ```
 
+Flip sign of latent factors to have a consisten hazard ratio for IGHV and its LF.
+```{r}
+flip_factor <- function(factor, model){
+  model@Expectations$Z$E[,factor] <- - model@Expectations$Z$E[,factor]
+  model@Expectations$SW$E <- sapply(model@Expectations$SW, function(w) w$E[,factor] <- -w$E[,factor])
+return(model)
+}
+
+model <- flip_factor("1", model)
+```
+
 Get relevant parts from model
 ```{r}
 data <- model@TrainData
@@ -95,6 +106,7 @@ k <- model@Dimensions$K
 Z <- getExpectations(model, "Z", "E")
 weights <- getExpectations(model, "SW", "E")
 ```
+
 
 Get other relevant covariates
 ```{r}
@@ -109,11 +121,6 @@ covariates <- covariates[, !grepl("T5|T6|Age4Pilot|Age4Main|Diagnosis|died|treat
 covariates$missingViews <- rowSums(sapply(data, function(dat) apply(is.na(dat), 2, all)))
 ```
 
-# Flip sign of latent factors
-To have a consisten hazard ratio for IGHV and its LF.
-```{r}
-Z[,"1"] <- -Z[,"1"]
-```
 
 # Correlation of latent factors
 ```{r}
@@ -125,7 +132,7 @@ dev.off()
 # Save workspace to be used in other down-stream analysis scripts
 ```{r}
 rm(plotdir)
-save(list=ls(), file="out_import_technical_.RData")
+save(list=ls(), file="out_import_technical_flipped.RData")
 ```
 
 ```{r}
