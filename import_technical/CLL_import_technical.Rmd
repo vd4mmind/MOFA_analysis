@@ -92,7 +92,10 @@ Flip sign of latent factors to have a consisten hazard ratio for IGHV and its LF
 ```{r}
 flip_factor <- function(factor, model){
   model@Expectations$Z$E[,factor] <- - model@Expectations$Z$E[,factor]
-  model@Expectations$SW$E <- sapply(model@Expectations$SW, function(w) w$E[,factor] <- -w$E[,factor])
+  for(viewnm in names(model@Expectations$SW)) {
+    model@Expectations$SW[[viewnm]]$E[,factor] <- -model@Expectations$SW[[viewnm]]$E[,factor]
+    model@Expectations$SW[[viewnm]]$EW[,factor] <- -model@Expectations$SW[[viewnm]]$EW[,factor]
+  }
 return(model)
 }
 
