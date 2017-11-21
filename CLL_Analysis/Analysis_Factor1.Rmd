@@ -6,6 +6,8 @@ output:
   BiocStyle::html_document:
     toc: true
 ---
+# Introduction
+This script analyses the first Factor, which is linked to IGHV status, as shown in Figure 3. Further, it performs imputation of IGHV status based on this factor.
 
 ```{r, message=F, warning=F}
 library(MOFAtools)
@@ -24,15 +26,15 @@ library(beeswarm)
 ```
 
 # Get imported model and related data
-Prepared in CLL_import_technical.Rmd
+(Prepared in import_models.Rmd)
 ```{r}
 #output path for plots and data
 plotdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/figures"
 if(!dir.exists(plotdir)) dir.create(plotdir)
 outdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/out"
 
-# load model selected in CLL_import_technical
-load(file.path(outdir,"out_import_technical_flipped.RData"))
+# load model selected in import_models.Rmd
+load(file.path(outdir,"out_import.RData"))
 
 # idx for IGHV latent factor to be analysed in this script
 idx_ighv <- "1"

@@ -7,6 +7,9 @@ output:
     toc: true
 ---
 
+# Introduction
+This script contains the code to load all the trained MOFA models on the CLL data, compare them and pick one model for all further analysis based on the ELBO. The output of this script ('out_import.RData') is used in all other analysis scripts
+
 ```{r, message=F, warning=F}
 library(MOFAtools)
 library(dplyr)
@@ -132,7 +135,7 @@ dev.off()
 # Save workspace to be used in other down-stream analysis scripts
 ```{r}
 rm(plotdir)
-save(list=ls(), file=file.path(outdir,"out_import_technical_flipped.RData"))
+save(list=ls(), file=file.path(outdir,"out_import.RData"))
 ```
 
 # SessionInfo

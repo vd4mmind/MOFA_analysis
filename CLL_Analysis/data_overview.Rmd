@@ -6,6 +6,8 @@ output:
   BiocStyle::html_document:
     toc: true
 ---
+# Introduction
+This script provides an overview of the data used as input for the MOFA model.
 
 
 ```{r}

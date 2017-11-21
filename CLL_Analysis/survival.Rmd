@@ -7,6 +7,10 @@ output:
     toc: true
 ---
 
+# Introduction
+This script analyses the links of the MOFA factors to clinical outcome as shown in Figure 5 of the manuscript.
+
+
 ```{r, message=F, warning=F}
 setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
 library(MOFAtools)
@@ -27,14 +31,16 @@ library(cowplot)
 # Get imported model and related data
 Prepared in CLL_import_technical.Rmd
 ```{r}
-load("out_import_technical_flipped.RData")
-
-#output path for plots
-plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_survival_expl"
+#output path for plots and data
+plotdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/figures"
 if(!dir.exists(plotdir)) dir.create(plotdir)
+outdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/out"
+
+# load model selected in import_models.Rmd
+load(file.path(outdir,"out_import.RData"))
 
 # source helper functions
-source("~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/utils_SurvPrediction.R")
+source("survival_utils.R")
 ```
 
 # Get survival data
