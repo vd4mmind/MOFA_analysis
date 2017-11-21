@@ -9,7 +9,6 @@ output:
 # Introduction
 This script provides an overview of the data used as input for the MOFA model.
 
-
 ```{r}
 library(MOFAtools)
 library(magrittr)
@@ -21,8 +20,9 @@ library(gridExtra)
 
 # Load data
 ```{r}
-load("~/Documents/MOFA/Analysis_Code/MOFA_CLL/data4package/CLL_data.RData")
-plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_overview"
+data("CLL_data", package = "MOFAtools")
+plotdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/figures"
+if(!dir.exists(plotdir)) dir.create(plotdir)
 
 # re-name
 names(CLL_data)[grepl("Drugs", names(CLL_data))] <- "Drug response"
@@ -38,7 +38,7 @@ ovw <- sapply(CLL_data, function(dat) apply(dat,2,function(pat) !all(is.na(pat))
 sum(apply(ovw,1,any))
 ovw <- ovw[apply(ovw,1,any),]
 
-# in the mutation views not only IGHV is measured:
+# check that in the mutation views not only IGHV is measured:
 all(apply(!is.na(CLL_data$Mutations[!rownames(CLL_data$Mutations)=="IGHV",]),2,any) == ovw[,"Mutations"])
 
 # melt binary matrix to data.frame
@@ -56,24 +56,22 @@ molten_ovw$ptotal <- paste("d=", sapply(CLL_data, nrow)[as.character(molten_ovw$
 ```
 
 #Set colours
-Define colors for omics (miRNA and lincRNA are no longer used)
+Define colors for omics
 
 ```{r}
-myPalette <- c(RColorBrewer::brewer.pal(8,"Dark2"),RColorBrewer::brewer.pal(9,"Set1"))
-RNAseq <- RColorBrewer::brewer.pal(3,"Greens")
-others <-myPalette[c(2,10,6)]
-names(RNAseq) <- c("lincRNA", "miRNA", "mRNA")
-names(others) <- c("Mutations", "Methylation", "Drug response")
-cols4omics <- c(RNAseq,others)
-cols4omics <- cols4omics[c("mRNA", "Mutations", "Methylation", "Drug response")]
+myPalette <- c(RColorBrewer::brewer.pal(8,"Dark2"),RColorBrewer::brewer.pal(9,"Set1"), RColorBrewer::brewer.pal(3,"Greens")[3])
+cols4omics <- myPalette[c(2,10,6,18)]
+names(cols4omics) <- c("Mutations", "Methylation", "Drug response", "mRNA")
 ```
 
 
-## Tile plot
+# Tile plot
 ```{r}
 pdf(file.path(plotdir, "tile_cll.pdf"), width = 5, height = 5)
 
+# y-axis label
 molten_ovw %<>% mutate(omic_label = paste(omic, ptotal, sep="\n"))
+
 gg1 <- ggplot(molten_ovw, aes(x=PatID, y=omic_label, fill=combi, width=0.7, height=0.9), col="black")+geom_tile() +
   scale_fill_manual(values = c('missing'="grey", cols4omics))+
     guides(fill=F) +  xlab("Patients (n=200)") + 
@@ -93,32 +91,3 @@ gg1
 
 dev.off()
 ```
-
-## Venn Diagram
-```{r, eval=FALSE}
-library(VennDiagram)
-ovw_list <- apply(ovw, 2, function(x) rownames(ovw)[x])
-ovw_list$covariates <- NULL
-ovw_list$RNAseq <- ovw_list$mRNA
-venn.diagram(x=ovw_list[c("Methylation", "Mutations", "Drug response", "RNAseq")], 
-             filename = file.path(plotdir, "cll_Venn.tiff"), fill = cols4omics[c("Methylation", "Mutations", "Drug response", "mRNA")])
-```
-
-
-## UpSet plot
-```{r, eval=FALSE}
-library(UpSetR)
-list_part <- ovw_list[c("Methylation", "Mutations", "Drug response", "RNAseq")]
-col_parts <- cols4omics[c("Methylation", "Mutations", "Drug response", "mRNA")]
-pdf(file.path(plotdir, "Upset_CLL_part.pdf"), width = 7, height = 5, onefile = F)
-upset(fromList(list_part), nintersects=NA,
-      sets.bar.color=col_parts[order(sapply(list_part, length), decreasing = T)], sets.x.label = "Number of patients")
-dev.off()
-
-pdf(file.path(plotdir, "Upset_CLL_all.pdf"), width = 7, height = 5, onefile = F)
-list_all <- ovw_list[names(cols4omics)[c(3:1,4:6)]]
-upset(fromList(list_all), nintersects=NA, nsets=10,
-      sets.bar.color=cols4omics[order(sapply(list_all, length), decreasing = T)], sets.x.label = "Number of patients")
-dev.off()
-```
-

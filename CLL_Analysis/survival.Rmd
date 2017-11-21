@@ -8,11 +8,10 @@ output:
 ---
 
 # Introduction
-This script analyses the links of the MOFA factors to clinical outcome as shown in Figure 5 of the manuscript.
+This script analyses the links of the MOFA factors to clinical outcome as shown in Figure 5 of the manuscript. The analysis is based on the model and other objects defined in import_models.Rmd.
 
 
 ```{r, message=F, warning=F}
-setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
 library(MOFAtools)
 library(dplyr)
 library(reshape2)
@@ -25,7 +24,6 @@ library(magrittr)
 library(Hmisc)
 library(glmnet)
 library(cowplot)
-# library(pace)
 ```
 
 # Get imported model and related data
@@ -43,37 +41,29 @@ load(file.path(outdir,"out_import.RData"))
 source("survival_utils.R")
 ```
 
-# Get survival data
+# Get survival data from Dietrich et al
+The patmeta and covariates objects are constucted in import_models.Rmd on the basis of the pace package.
 ```{r}
-survivalDataTTT <- as.matrix(patmeta[,c("T5","treatedAfter")])
-survivalDataTTT<- survivalDataTTT[!is.na(survivalDataTTT[,1]),]
-survivalDataOS <- as.matrix(patmeta[,c("T6","died")])
-survivalDataOS <- survivalDataOS[!is.na(survivalDataOS[,1]),]
-colnames(survivalDataOS) <- colnames(survivalDataTTT)<-c("time", "status")
-listSurvData <- list(TTT= survivalDataTTT, OS=survivalDataOS)
+survivalData <- as.matrix(patmeta[,c("T5","treatedAfter")])
+survivalData<- survivalDataTTT[!is.na(survivalDataTTT[,1]),]
+colnames(survivalData)<-c("time", "status")
+  
+# subset to common patients
+commonPats <- intersect(rownames(Z), rownames(survivalData))
+Zcommon <- Z[commonPats,]
+survivalData <- survivalData[commonPats,]
+covariatesCommon <- covariates[commonPats,]
+dataCommmon <- lapply(data, function(dd) dd[,commonPats])
 
-biomarkers <- c("IGHV", "TP53", "age",  "del17p13", "trisomy12", "sex", "del11q22.3", "del13q14", "SF3B1", "NOTCH1")#, "IC50beforeTreatment")
+# construct survival object
+SurvObject <-Surv(survivalData[,1],survivalData[,2])
 ```
 
-# 4(a) Forest Plots
+# Fit univariate Cox models for each factor
 All covariates are scaled to ensure comparability of hazard ratio.This, however, looses interpretability of HR for 0-1 groups.
 ```{r, fig.height=12, fig.width=10}
-ls_surv <- lapply(c("TTT", "OS"), function(survType) { 
-  
-  # get either TTT ot OS data
-  survivalData <-listSurvData[[survType]]
-  
-  # subset to common patients
-  commonPats <- intersect(rownames(Z), rownames(survivalData))
-  Zcommon <- Z[commonPats,]
-  covariatesCommon <- covariates[commonPats,]
-  survivalData <- survivalData[commonPats,]
-    
-  # construct survival object
-  SurvObject <-Surv(survivalData[,1],survivalData[,2])
-  
-  # fit a cox model for latent factors, scaling predictors
-  pval_LFs<-sapply(which(apply(Z,2,var, na.rm=T)>0), function(i){
+# fit a cox model for latent factors, scaling predictors
+pval_LFs<-sapply(which(apply(Z,2,var, na.rm=T)>0), function(i){
     fit <- coxph(SurvObject  ~  scale(Zcommon[,i]))  
     s <- summary(fit) 
     c(p      = s[["coefficients"]][, "Pr(>|z|)"], 
@@ -81,62 +71,24 @@ ls_surv <- lapply(c("TTT", "OS"), function(survType) {
       lower  = s[["conf.int"]][, "lower .95"], 
       higher = s[["conf.int"]][, "upper .95"])
   })
-  colnames(pval_LFs) <- colnames(Z)[which(apply(Z,2,var, na.rm=T)>0)] #paste("LF",colnames(Z)[which(apply(Z,2,var, na.rm=T)>0)])
+colnames(pval_LFs) <- colnames(Z)[which(apply(Z,2,var, na.rm=T)>0)]
 
-  # fit a cox model for other relevant biomarkers, scaling all predictor
-  pvals_Cov<-sapply(biomarkers, function(cnm){
-    fit <- coxph(SurvObject  ~  scale(covariatesCommon[,cnm])) 
-    s <- summary(fit) 
-    c(p      = s[["coefficients"]][, "Pr(>|z|)"], 
-      coef   = s[["coefficients"]][, "exp(coef)"], 
-      lower  = s[["conf.int"]][, "lower .95"], 
-      higher = s[["conf.int"]][, "upper .95"])
-  })
-
-  # collect in data frame
-  pvalsSurv<-cbind(pval_LFs,pvals_Cov)
-  df_survival <- as.data.frame(t(pvalsSurv))
-  df_survival$predictor <- rownames(df_survival)
-  types <- list(latentFactors = colnames(pval_LFs), 
-                mutations = biomarkers[!grepl("sex|age", biomarkers)], 
-                demographics  = biomarkers[grepl("sex|age", biomarkers)])
-  df_survival$predictorType <- with(df_survival, ifelse(predictor %in% types$latentFactors, "MOFA factor",
-                              ifelse(predictor %in% types$mutations, "genetic", "demographic" )))
-  df_survival$predictor <- factor(df_survival$predictor, levels = rev(c(colnames(pval_LFs),colnames(covariatesCommon))))
-  df_survival$survType <- ifelse(survType=="TTT", "Time to next treatment", "Overall Survival")
-  df_survival$label <- paste(formatC(df_survival$p, digits = 2), sep="")
-  df_survival
-})
-df_surv <- ls_surv %>% bind_rows()
+# collect in data frame
+df_survival <- as.data.frame(t(pval_LFs))
+df_survival$label <- paste(formatC(df_survival$p, digits = 2), sep="")
+df_survival$predictor <- factor(paste("Factor",colnames(pval_LFs)), levels=rev(paste("Factor",colnames(pval_LFs))))
+df_survival
 ```
 
-## Joint plots (both/TTT/OS)
+## Forest Plot
 ```{r}
-# pdf(file.path(plotdir, "ForestPlotSurvival_joint.pdf"), width = 7, height = 12)
-# # joint
-# ggplot(df_surv, aes(x=predictor,y=coef,ymin=lower,ymax=higher, col=predictorType))+
-#   geom_pointrange()+ coord_flip() +
-#   scale_x_discrete() + ylab("Hazard Ratio")+
-#   scale_y_log10(breaks=c(0.1,0.3,1,3,10), limits=c(min(df_surv$lower),30)) +
-#   geom_hline(aes(yintercept=1), linetype="dotted") + facet_wrap(~survType) +
-#   ggtitle("Predictiveness of Survival") +
-#   geom_text(aes(label=label, y=20),size=4.5, vjust = 0)+
-#   theme(text =element_text(size=16),
-#         axis.ticks.y = element_blank(),
-#         legend.position="bottom", panel.grid =element_blank(),
-#         panel.background = element_rect(fill="white"),
-#         strip.background = element_rect( fill="white")) +
-#   guides(colour=guide_legend("type of predictor")) +
-#   xlab("")
-# dev.off()
-
 pdf(file.path(plotdir, "ForestPlotSurvival_TTT.pdf"), width = 7, height = 12)
 # TTT
-ggplot(ls_surv[[1]], aes(x=predictor,y=coef,ymin=lower,ymax=higher, col=predictorType))+
-  geom_pointrange()+ coord_flip() +
+ggplot(df_survival, aes(x=predictor,y=coef,ymin=lower,ymax=higher))+
+  geom_pointrange( col='#619CFF')+ coord_flip() +
   scale_x_discrete() + ylab("Hazard Ratio")+
   scale_y_log10(breaks=c(0.1,0.3,1,3), limits=c(min(df_surv$lower),5)) +
-  geom_hline(aes(yintercept=1), linetype="dotted") + facet_wrap(~survType) +
+  geom_hline(aes(yintercept=1), linetype="dotted") +
   ggtitle("Predictiveness of time to treatment") +
   geom_text(aes(label=label, y=4),size=4.5, vjust = 0)+
   theme(text =element_text(size=16),
@@ -146,120 +98,21 @@ ggplot(ls_surv[[1]], aes(x=predictor,y=coef,ymin=lower,ymax=higher, col=predicto
         strip.text = element_blank(),
         axis.text.y = element_text(size=15),
         plot.title = element_text(size=18)) +
-  guides(colour=guide_legend("type of predictor")) +
-  xlab("")
-dev.off()
-
-
-# OS
-# ggplot(ls_surv[[2]], aes(x=predictor,y=coef,ymin=lower,ymax=higher, col=predictorType))+
-#   geom_pointrange()+ coord_flip() +
-#   scale_x_discrete() + ylab("Hazard Ratio")+
-#   scale_y_log10(breaks=c(0.1,0.3,1,3,10), limits=c(min(df_surv$lower),30)) +
-#   geom_hline(aes(yintercept=1), linetype="dotted") + facet_wrap(~survType) +
-#   ggtitle("Predictiveness of Survival") +
-#   geom_text(aes(label=label, y=20),size=4.5, vjust = 0)+
-#   theme(text =element_text(size=20),
-#         axis.ticks.y = element_blank(),
-#         legend.position="bottom", panel.grid =element_blank(),
-#         panel.background = element_rect(fill="white")) +
-#   xlab("")
-
-```
-
-
-## Seperate for LFs and others
-LFs are reoriented to have a HR>1
-```{r}
-ls_surv[[1]] %<>% mutate( predictorType = as.factor(predictorType))
-
-# re-orient to HR > 1
-ls_surv[[1]] %<>% mutate( positive = coef>1)
-ls_surv[[1]] %<>% mutate(y = ifelse(positive,coef, 1/coef))
-ls_surv[[1]] %<>% mutate(ymin = ifelse(positive,lower, 1/lower))
-ls_surv[[1]] %<>% mutate(ymax = ifelse(positive,higher, 1/higher))
-df_MOFA <- filter(ls_surv[[1]], predictorType=="MOFA factor")
-
-# Plot for LFs
-gg1 <- ggplot(df_MOFA, 
-              aes(x=predictor, y=y,ymin=ymin,ymax=ymax, col=predictorType))+
-  geom_pointrange()+ coord_flip() +
-  scale_x_discrete() + ylab("(Positive) Hazard Ratio")+ 
-  scale_y_log10(breaks=c(0.75,1,1.5,2,3), limits=c(min(df_MOFA$ymin)-0.1,3.1)) +
-  geom_hline(aes(yintercept=1), linetype="dotted") + facet_wrap(~survType) +
-  # ggtitle("Predictiveness of time to treatment") +
-  geom_text(aes(label=label, y=2.5),size=5, hjust = "left")+
-  theme(text =element_text(size=18),
-        axis.ticks.y = element_blank(),
-        legend.position="bottom", panel.grid =element_blank(),
-        panel.background = element_rect(fill="white"),
-        strip.text = element_blank(),
-        axis.text.y = element_text(size=16),
-        axis.text.x = element_text(size=16),
-        plot.title = element_text(size=18)) +
-  guides(colour=F) +
-  xlab("Factor") + scale_color_discrete(drop=FALSE)
-
-# Plot for others
-gg2 <- ggplot(filter(ls_surv[[1]], predictorType!="MOFA factor"), aes(x=predictor,y=coef,ymin=lower,ymax=higher, col=predictorType))+
-  geom_pointrange()+ coord_flip() +
-  scale_x_discrete() + ylab("Hazard Ratio")+
-  scale_y_log10(breaks=c(0.1,0.3,1,3), limits=c(min(df_surv$lower),5)) +
-  geom_hline(aes(yintercept=1), linetype="dotted") + facet_wrap(~survType) +
-  geom_text(aes(label=label, y=4),size=4.5, hjust = "left")+
-  theme(text =element_text(size=16),
-        axis.ticks.y = element_blank(),
-        legend.position="bottom", panel.grid =element_blank(),
-        panel.background = element_rect(fill="white"),
-        strip.text = element_blank(),
-        axis.text.y = element_text(size=15),
-        plot.title = element_text(size=18)) +
-  guides(colour=guide_legend("type of predictor")) +
-  xlab("")+  scale_color_discrete(drop=FALSE)
-
-# save plots
-pdf(file.path(plotdir, "ForestPlotSurvival_TTT_LF.pdf"), width = 6, height = 6, useDingbats = FALSE)
-gg1
-dev.off()
-pdf(file.path(plotdir, "ForestPlotSurvival_TTT_Cov.pdf"), width = 7.5, height = 6, useDingbats = FALSE)
-gg2
+xlab("")
 dev.off()
 ```
+
 
 # Multivariate models for predicting survival
 Harrals C-Index is used as performance measure, 5-fold stratified cross-validation.
 Both models using PCs and no penalization as well as using all features with a ridge approach are fitted here.
 ```{r}
-# df_hc <- lapply(c("TTT", "OS"), function(survType) {
-  df_hc <- lapply(c("TTT"), function(survType) {
-
-  # get either TTT ot OS data
-  survivalData <- listSurvData[[survType]]
-  
-  # subset to common patients
-   commonPats <- intersect(rownames(Z), rownames(survivalData))
-  # note : MOFA is also doing better on patients having all assays
-  # commonPats <- intersect(rownames(Z), intersect(rownames(survivalData),
-  #                 Reduce(intersect,sapply(data, function(dd) colnames(dd)[!apply(dd,2,function(p) all(is.na(p)))]))))
-  
-  covariatesCommon <- covariates[commonPats,]
-  # selected <- covariatesCommon[,c("TP53", "del17p13", "IGHV", "MethylationCluster", "SF3B1")]
-  # commonPats <- intersect(commonPats, rownames(selected)[apply(selected,1,function(r) !any(is.na(r)))])
-  # covariatesCommon <- covariates[commonPats,]
-  # selected <- covariatesCommon[,c("TP53", "del17p13", "IGHV", "MethylationCluster", "SF3B1")]
-  Zcommon <- Z[commonPats,]
-  survivalData <- survivalData[commonPats,]
-  dataCommmon <- lapply(data, function(dd) dd[,commonPats])
-  
-  # construct survival object
-  SurvObject <-Surv(survivalData[,1],survivalData[,2])
-  
   #stratified CV to include same proportion of uncensored cases
   set.seed(1290)
   uncensored <- SurvObject[,"status"]==1
   cv_ix <- dismo::kfold(1:length(commonPats), k=5, by=uncensored)
   
-  # Use same number of principal components as predictors as MOFA factors
+  # Use same number of principal components as predictors as MOFA factors (without the intercept)
   topPC <- ncol(Z) - 1
 
   # impute missing data values by mean
@@ -281,59 +134,46 @@ Both models using PCs and no penalization as well as using all features with a r
   
   # add MOFA factors
   FeatureList$LF = Zcommon[,-1]
-  FeatureList$LF1 = Zcommon[,"1", drop=FALSE]
-  FeatureList$LF7 = Zcommon[,"7", drop=FALSE]
-  FeatureList$LF8 = Zcommon[,"8", drop=FALSE]
-  FeatureList$LF178 = Zcommon[,c("1","7","8")]
-  # FeatureList$selected <- cbind(selected$TP53, ifelse(selected$IGHV=="U",0,1), ifelse(selected$MethylationCluster=="LP",0, ifelse(selected$MethylationCluster=="IP",1,2)), selected$SF3B1, selected$del17p13)
 
-    # List of predictors usign all features
+  # List of predictors using all features
   FeatureList_all <- data_imputed
   names(FeatureList_all) <- paste(names(data_imputed),"full",sep="_")
 
   # fit a cox model and predict on left-out fold
   fit <- lapply(unique(cv_ix), function(i){
     
-      #fit coxph for reduced
-      c = lapply(FeatureList, function(x) coxph(SurvObject[cv_ix!=i,]  ~ as.matrix(x)[cv_ix!=i,]))
-      p = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y), FeatureList, c)
+  #fit coxph for reduced (i.e. MOFA facotrs and PCs)
+  c = lapply(FeatureList, function(x) coxph(SurvObject[cv_ix!=i,]  ~ as.matrix(x)[cv_ix!=i,]))
+  p = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y), FeatureList, c)
       
-      # fit ridge for all
-      c_all = lapply(FeatureList_all, function(x) 
-      cv.glmnet(as.matrix(x)[cv_ix!=i,], survivalData[cv_ix!=i,], family="cox", alpha=0))
-      p_all = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y, y$lambda.min), FeatureList_all, c_all)
-      p_all <- do.call(cbind, p_all)      
-      colnames(p_all) <- names(FeatureList_all)
-      
-      p_joint <- cbind(p, p_all)
-            
-      CI=apply(-p_joint,2, rcorr.cens, SurvObject[cv_ix==i])[1,]
-      list(CI=CI,c=c, c_all=c_all)
+  # fit cox model with ridge penalty for all
+  c_all = lapply(FeatureList_all, function(x) 
+  cv.glmnet(as.matrix(x)[cv_ix!=i,], survivalData[cv_ix!=i,], family="cox", alpha=0))
+  p_all = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y, y$lambda.min), FeatureList_all, c_all)
+  p_all <- do.call(cbind, p_all)      
+  colnames(p_all) <- names(FeatureList_all)
+  
+  # calculate CI    on left-out fold 
+  p_joint <- cbind(p, p_all)
+  CI=apply(-p_joint,2, rcorr.cens, SurvObject[cv_ix==i])[1,]
+  list(CI=CI,c=c, c_all=c_all)
   })
 
-    # get cross-validated CI
-    concordanceCV <- sapply(fit, function(l) l$CI)
-    colnames(concordanceCV) <- unique(cv_ix)
-    HcDF_cox <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI")
-    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF", "MOFA factors", as.character(HcDF_cox$predictor))
-        HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF1", "factor 1", as.character(HcDF_cox$predictor))
-    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF7", "factor 7", as.character(HcDF_cox$predictor))
-    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF8", "factor 8", as.character(HcDF_cox$predictor))
-    HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF178", "factors 1,7,8", as.character(HcDF_cox$predictor))
+  # get cross-validated CI
+  concordanceCV <- sapply(fit, function(l) l$CI)
+  colnames(concordanceCV) <- unique(cv_ix)
+  df_hc <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI")
+  df_hc$predictor <- ifelse(df_hc$predictor=="LF", "MOFA factors", as.character(df_hc$predictor))
 
-    HcDF_cox$survType <- ifelse(survType=="TTT", "Time to next treatment", "Overall Survival")
-    HcDF_cox
-}) %>% bind_rows()
-
-# calculate summary statistics across folds
-summaryHc <- aggregate(df_hc$CI,
+  # calculate summary statistics across folds
+  summaryHc <- aggregate(df_hc$CI,
     by = list(predictors = df_hc$predictor, survType=df_hc$survType), 
     FUN = function(x) c(mean = mean(x), sd = sd(x),
                         n = length(x)))
-summaryHc <- do.call(data.frame, summaryHc)
-summaryHc$se <- summaryHc$x.sd / sqrt(summaryHc$x.n)
+  summaryHc <- do.call(data.frame, summaryHc)
+  summaryHc$se <- summaryHc$x.sd / sqrt(summaryHc$x.n)
 
-summaryHc
+  summaryHc
 ```
 
 ## Define colors for barplot
@@ -400,54 +240,11 @@ pdf(file.path(plotdir, "HarrelsC_TTT_supp.pdf"))
 dev.off()
 ```
 
-## Supp Plot X: PCs as predictors and single LF
-```{r}
-summaryHc_supp2 <- filter(summaryHc, survType == "Time to next treatment",
-                         predictors %in% c(names(data), "all", "MOFA factors", "factor 1","factor 7","factor 8","factors 1,7,8"))
-limits <- aes(ymax = summaryHc_supp2$x.mean + summaryHc_supp2$se,
-              ymin = summaryHc_supp2$x.mean - summaryHc_supp2$se)
-summaryHc_supp2$predictors <- factor(summaryHc_supp2$predictors,
-                                    levels =c("Methylation", "Mutations","mRNA",  "Drugs",
-                                               "all", "MOFA factors","factor 1","factor 7","factor 8","factors 1,7,8"))
-
-# barplot
-pdf(file.path(plotdir, "HarrelsC_TTT_supp2.pdf"))
-  ggplot(summaryHc_supp2, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
-    geom_bar(stat = "identity") + 
-   coord_cartesian(ylim = c(0.5,0.85)) +
-  # ggtitle(paste("Prediction of time to treatment"))+
-  scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + 
-  geom_errorbar(limits, position = "dodge", width = 0.25)+
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=18),
-        axis.text.y = element_text(size=18),
-         axis.title.y = element_text(size=18),
-        strip.background = element_rect(fill="white"),
-        strip.text = element_blank(),
-        legend.position= "none",
-        plot.title = element_text(size=20)) +
-  ylab("Harrell's C-index") + xlab("")
-dev.off()
-```
-
 
 # Kaplan-Meier plots
 ## all MOFA factors
 ```{r, fig.height=12, fig.width=12}
-for(survType in c("TTT", "OS")){
-  # get either TTT ot OS data
-  survivalData <-listSurvData[[survType]]
-  
-  # subset to common patients
-  commonPats <- intersect(rownames(Z), rownames(survivalData))
-  Zcommon<-Z[commonPats,]
-  covariatesCommon <- covariates[commonPats,]
-  survivalData <- survivalData[commonPats,]
-  
-  # construct survival object
-  IGHV <- ifelse(covariatesCommon[,"IGHV"]==0, "U","M")
-  df <- data.frame(time=survivalData[,1], event = survivalData[,2], Zcommon, IGHV=IGHV)
-  # SurvObject <-Surv(survivalData[,1],survivalData[,2])
-    
+
   # KM for all LFs
  glist <- lapply(as.character(1:(ncol(Z)-1)), function(lfno){
   cut <- survminer::surv_cutpoint(df, variables=paste("X", lfno, sep=""))
@@ -479,207 +276,9 @@ for(survType in c("TTT", "OS")){
  })
  
  # joint plot of significant factors:
-  pdf(file.path(plotdir, paste("KaplanMeier_",survType,"_signif.pdf", sep="")), width=10.5, height=3.5)
+  pdf(file.path(plotdir, "KaplanMeier_signif.pdf"), width=10.5, height=3.5)
     grid.arrange(glist[[1]], glist[[7]], glist[[8]], ncol=3) 
     # do.call("grid.arrange", glist[c(1,7,8)], ncol=3)
   dev.off()
-}
+
 ```
-
-## IGHV and associated factor
-```{r}
-  # KM for LF
-    lfno <- "1"
-
-# for(survType in c("TTT", "OS")){
-  for(survType in c("TTT")){
-
-  # get either TTT ot OS data
-  survivalData <-listSurvData[[survType]]
-
-  # subset to common patients
-  commonPats <- intersect(rownames(Z), rownames(survivalData))
-  # hasAll <- apply(sapply(data, function(view) apply(view[,commonPats],2, function(c) !all(is.na(c)))),1,all)
-  # commonPats <- commonPats[hasAll]
-  Zcommon<-Z[commonPats,]
-  covariatesCommon <- covariates[commonPats,]
-  survivalData <- survivalData[commonPats,]
-  
-    
-  # nice name   
-  survType <- ifelse(survType=="TTT", "Time to treatment", "Overall survival")
-
-  
-  # construct survival object
-  IGHV <- covariatesCommon[,"IGHV"]
-  df <- data.frame(time=survivalData[,1], event = survivalData[,2], Zcommon, IGHV=IGHV)
-
-      # KM for IGHV
-  fit <- survfit(Surv(time, event) ~ as.factor(IGHV), df)
-  ggIGHV <- survminer::ggsurvplot(fit, data=df,
-                        pval = T,  pval.method =F  , 
-                        conf.int = TRUE, legend.labs = c("U-CLL", "M-CLL"),
-                        xlab = survType)
-
-
-  # Calculate optimal cut-point on latent factor
-  cut <- survminer::surv_cutpoint(df, variables=paste("X", lfno, sep=""))
-  df$FactorCluster <- df[,paste("X", lfno, sep="")] > cut$cutpoint$cutpoint
-  
-  # #alternative:
-  # df$FactorCluster <- Zcommon[,lfno] > cut$cutpoint$cutpoint
-  # ZIGHV <- kmeans(Zcommon[,lfno], 2, nstart=1000, iter.max = 1000)
-  # ZIGHV <- ZIGHV$cluster
-  # # 
-  # ZIGHV <- ifelse(Zcommon[,lfno]<0.6, "M", "U")
-  # df$FactorCluster <-ZIGHV
-  # 
-  fit <- survfit(Surv(time, event) ~ FactorCluster, df)
-  ggLF <- survminer::ggsurvplot(fit, data =df,
-                        pval = T,            
-                        conf.int = TRUE,
-                        legend.labs = c(paste("low LF", lfno), paste("high LF", lfno)),
-                        xlab = survType
-                        )
-  
-  table(paste(df$FactorCluster, df$IGHV))
-  
-  # arrange plots  
-  pdf(file.path(plotdir, "KaplanMeierIGHV.pdf"), width=7, height=5)
-  grid.arrange(ggIGHV$plot, ggLF$plot, ncol=2)
-  dev.off()
-
-}
-```
-
-<!-- # Doubling time -->
-
-<!-- ```{r} -->
-<!-- load("~/Documents/cll/var/DoublingTime_070816.RData") -->
-<!-- load("~/Documents/cll/var/encPatientID_160218.RData") -->
-<!-- LDT %<>% mutate(patID2 = encPatientID$PatientID2[match(patID,encPatientID$PatientID)]) -->
-<!-- dtime <- LDT$doubling.time -->
-<!-- names(dtime) <- LDT$patID2 -->
-
-<!--   # subset to common patients -->
-<!--   commonPats <- intersect(rownames(Z), names(dtime)) -->
-<!--   hasAll <- apply(sapply(data, function(view) apply(view[,commonPats],2, function(c) !all(is.na(c)))),1,all) -->
-<!--   commonPats <- commonPats[hasAll] -->
-<!--   Zcommon<-Z[commonPats,] -->
-<!--   covariatesCommon <- covariates[commonPats,] -->
-<!--   dtime <- dtime[commonPats] -->
-
-<!--   IGHV <- covariatesCommon[,"IGHV"] -->
-<!--   ZIGHV <- kmeans(Zcommon[,lfno], 2, nstart=1000, iter.max = 1000) -->
-<!--   ZIGHV <- ZIGHV$cluster -->
-
-<!--   summary(lm(dtime~Zcommon)) -->
-
-<!--   summary(lm(dtime~ZIGHV)) -->
-<!--   summary(lm(dtime~IGHV)) -->
-<!-- ``` -->
-
-```{r}
-sessionInfo()
-```
-
-
-
-<!-- ## Full data - Multivariate models for predicitng survival -->
-<!-- Harrals C-Index is used as performance measure, 5-fold stratified cross-validation -->
-<!-- ```{r} -->
-<!-- df_hc <- lapply(c("TTT", "OS"), function(survType) { -->
-<!--   # df_hc <- lapply(c("TTT"), function(survType) {  -->
-
-<!--   # get either TTT ot OS data -->
-<!--   survivalData <- listSurvData[[survType]] -->
-
-<!--   # subset to common patients -->
-<!--   commonPats <- intersect(rownames(Z), rownames(survivalData)) -->
-<!--   Zcommon <- Z[commonPats,] -->
-<!--   covariatesCommon <- covariates[commonPats,] -->
-<!--   survivalData <- survivalData[commonPats,] -->
-
-<!--   # construct survival object -->
-<!--   SurvObject <-Surv(survivalData[,1],survivalData[,2]) -->
-
-<!--   #stratified CV to include same proportion of uncensored cases -->
-<!--   set.seed(1290) -->
-<!--   uncensored <- SurvObject[,"status"]==1 -->
-<!--   cv_ix <- dismo::kfold(1:length(commonPats), k=5, by=uncensored) -->
-
-<!--   # Use full data as predictors -->
-<!--   FeatureList <- lapply(data, function(singleview) t(singleview[,commonPats])) -->
-<!--   # PCs of concatenated data -->
-<!--   FeatureList$concatenated <- Reduce(cbind, FeatureList) -->
-<!--   FeatureList$others <- covariatesCommon[, biomarkers] -->
-<!--   FeatureList$LF = Zcommon[,-1] -->
-
-<!--   #impute missing data -->
-<!--     FeatureListimputed <- lapply(FeatureList, function(view) { -->
-<!--     apply(view,2, function(x) { x[is.na(x)] <- mean(x, na.rm=TRUE); return(x)}) -->
-<!--   }) -->
-<!--     # fit a ridge approach -->
-<!--    concordanceCV <- sapply(unique(cv_ix), function(i){ -->
-<!--       c = lapply(FeatureListimputed, function(x) cv.glmnet(x[cv_ix!=i,], survivalData[cv_ix!=i,], family="cox", alpha=1 )) -->
-<!--       p = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y, y$lambda.min), FeatureListimputed, c) -->
-<!--       p <- do.call(cbind, p) -->
-<!--       apply(-p,2, rcorr.cens, SurvObject[cv_ix==i])[1,] -->
-<!--     }) -->
-
-
-<!--   colnames(concordanceCV) <- unique(cv_ix) -->
-<!--   rownames(concordanceCV) <- names(FeatureListimputed) -->
-<!--   HcDF_cox <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI") -->
-<!--   HcDF_cox$predictor <- ifelse(HcDF_cox$predictor=="LF", "MOFA factors", as.character(HcDF_cox$predictor)) -->
-<!--   HcDF_cox$method <- "Lasso" -->
-<!--   HcDF_cox$survType <- ifelse(survType=="TTT", "Time to next treatment", "Overall Survival") -->
-<!--   HcDF_cox -->
-<!-- }) %>% bind_rows() -->
-
-<!-- # df_hc$predictor[df_hc$predictor=="others"] <- "genetic/demographic" -->
-
-<!-- # calculate summary statistics across folds -->
-<!-- summaryHc <- aggregate(df_hc$CI, -->
-<!--     by = list(predictors = df_hc$predictor, method = df_hc$method, survType=df_hc$survType), -->
-<!--     FUN = function(x) c(mean = mean(x), sd = sd(x), -->
-<!--                         n = length(x))) -->
-<!-- summaryHc <- do.call(data.frame, summaryHc) -->
-<!-- summaryHc$se <- summaryHc$x.sd / sqrt(summaryHc$x.n) -->
-<!-- ``` -->
-
-<!-- Make plots -->
-<!-- ```{r} -->
-<!-- # define colors -->
-<!-- cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7") -->
-<!-- cols4survival <- cbPalette[1:length(unique(df_hc$predictor))] -->
-<!-- names(cols4survival) <- unique(df_hc$predictor) -->
-
-<!-- # boxplot -->
-<!-- ggplot(df_hc, aes(x=predictor, y=CI, fill=predictor))+geom_boxplot()+geom_abline(aes(intercept=0.5, slope=0)) +ggtitle("Prediction of survival")+ -->
-<!--   scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + -->
-<!--   theme(axis.text.x = element_text(angle = 45, hjust = 1))+facet_wrap(~survType) -->
-
-<!-- # Barplot -->
-<!-- # summaryHc %<>% filter(survType == "Time to treatment") -->
-<!-- limits <- aes(ymax = summaryHc$x.mean + summaryHc$se, -->
-<!--               ymin = summaryHc$x.mean - summaryHc$se) -->
-<!-- # summaryHc$predictors <- factor(summaryHc$predictors, levels =c("mRNA", "Mutations", "Methylation", "Drugs",  "concatenated", "MOFA factors")) -->
-
-<!-- # barplot -->
-<!--  pdf(file.path(plotdir, "HarrelsC_allFeatures_Lasso.pdf"), width=10) -->
-<!--   ggplot(summaryHc, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+ -->
-<!--     geom_bar(stat = "identity") +  -->
-<!--    coord_cartesian(ylim = c(0.5,0.85)) + -->
-<!--   # ggtitle(paste("Prediction of time to treatment"))+ -->
-<!--   scale_fill_manual(values=cols4survival, labels=names(cols4survival)) +  -->
-<!--   geom_errorbar(limits, position = "dodge", width = 0.25)+ -->
-<!--   theme(axis.text.x = element_text(angle = 45, hjust = 1), -->
-<!--         strip.background = element_rect(fill="white"), -->
-<!--         # strip.text = element_blank(), -->
-<!--         legend.position= "none", -->
-<!--         plot.title = element_text(size=20)) + -->
-<!--   ylab("Harrell's C-index") + xlab("") + -->
-<!--   facet_wrap(~survType) -->
-<!--  dev.off() -->
-<!-- ``` -->

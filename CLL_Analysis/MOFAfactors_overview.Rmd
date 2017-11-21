@@ -8,7 +8,7 @@ output:
 ---
 
 # Introduction
-This script provides an overview of the factors inferred by MOFA on the CLL data set as shown in Figure 2 of the manuscript.
+This script provides an overview of the factors inferred by MOFA on the CLL data set as shown in Figure 2 of the manuscript.  The analysis is based on the model and other objects defined in import_models.Rmd.
 
 ```{r, message=F, warning=F}
 library(MOFAtools)

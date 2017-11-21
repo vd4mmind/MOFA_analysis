@@ -7,7 +7,7 @@ output:
     toc: true
 ---
 # Introduction
-This script analyses the first Factor, which is linked to IGHV status, as shown in Figure 3. Further, it performs imputation of IGHV status based on this factor.
+This script analyses the first Factor, which is linked to IGHV status, as shown in Figure 3. Further, it performs imputation of IGHV status based on this factor. The analysis is based on the model and other objects defined in import_models.Rmd.
 
 ```{r, message=F, warning=F}
 library(MOFAtools)
