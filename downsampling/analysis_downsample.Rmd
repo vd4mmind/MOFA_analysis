@@ -33,8 +33,8 @@ theme_fn <- function() {
 # in.folder <- "/Users/ricard/data/downsample/results2/mRNA"
 in.folder <- "/hps/nobackup/stegle/users/ricard/downsample/results"
 
-nsamples_downsampled <- seq(0,50,5)
-ntrials <- 25
+nsamples_downsampled <- seq(0,100,5)
+ntrials <- 50
 ```
 
 
@@ -61,61 +61,67 @@ for (n in nsamples_downsampled) {
   for (i in 1:ntrials) {
     
     # Define model files
-    # incompleteD_incompleteM_file <- paste0(in.folder,"/incompleteD_incompleteM_",n,"_",i,".hdf5")
-    # incompleteD_completeM_file <- paste0(in.folder,"/incompleteD_completeM_",n,"_",i,".hdf5")
-    completeD_incompleteM_file <- paste0(in.folder,"/completeD_incompleteM_",n,"_",i,".hdf5")
-    completeD_completeM_file <- paste0(in.folder,"/completeD_completeM_",n,"_",i,".hdf5")
-    # imputed_incomplete_file <- paste0(in.folder,"/incomplete_imputed_",n,"_",i,".hdf5")
-    imputed_complete_file <- paste0(in.folder,"/complete_imputed_",n,"_",i,".hdf5")
+    incompleteD_incompleteM_file <- paste0(in.folder,"/incompleteD_incompleteM_",n,"_",i,".hdf5")
+    incompleteD_completeM_file <- paste0(in.folder,"/incompleteD_completeM_",n,"_",i,".hdf5")
+    # completeD_incompleteM_file <- paste0(in.folder,"/completeD_incompleteM_",n,"_",i,".hdf5")
+    # completeD_completeM_file <- paste0(in.folder,"/completeD_completeM_",n,"_",i,".hdf5")
+    imputed_incomplete_file <- paste0(in.folder,"/incomplete_imputed_",n,"_",i,".hdf5")
+    # imputed_complete_file <- paste0(in.folder,"/complete_imputed_",n,"_",i,".hdf5")
     
-    # if (all(file.exists(incompleteD_incompleteM_file,incompleteD_completeM_file,completeD_incompleteM_file,completeD_completeM_file,imputed_incomplete_file,imputed_complete_file))) {
+    if (file.exists(incompleteD_incompleteM_file)) {
+      incompleteD_incompleteM_model <- loadModel(incompleteD_incompleteM_file, sortFactors=F)
+      tmp_nfactors[nsamples_downsampled==n & trial==i, incompleteD_incompleteM:=getDimensions(incompleteD_incompleteM_model)[["K"]]]
+      tmp_survival[nsamples_downsampled==n & trial==i, incompleteD_incompleteM:=predictSurvival(incompleteD_incompleteM_model)[1] ]
+      npathways_incompleteD_incompleteM <- FeatureSetEnrichmentAnalysis(incompleteD_incompleteM_model, "mRNA", reactome, local.statistic = "loading",
+                                           transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+      tmp_ngenesets[nsamples_downsampled==n & trial==i, incompleteD_incompleteM:=sum(npathways_incompleteD_incompleteM<0.1, na.rm=T)]
+    }
     
-    # Load Models
-    # incompleteD_incompleteM_model <- loadModel(incompleteD_incompleteM_file, sortFactors=F)
-    # incompleteD_completeM_model <- loadModel(incompleteD_completeM_file, sortFactors=F)
-    completeD_incompleteM_model <- loadModel(completeD_incompleteM_file, sortFactors=F)
-    completeD_completeM_model <- loadModel(completeD_completeM_file, sortFactors=F)
-    # imputed_incomplete_model <- loadModel(imputed_incomplete_file, sortFactors=F)
-    imputed_complete_model <- loadModel(imputed_complete_file, sortFactors=F)
+    if (file.exists(incompleteD_completeM_file)) {
+      incompleteD_completeM_model <- loadModel(incompleteD_completeM_file, sortFactors=F)
+      tmp_nfactors[nsamples_downsampled==n & trial==i, incompleteD_completeM:=getDimensions(incompleteD_completeM_model)[["K"]]]
+      tmp_survival[nsamples_downsampled==n & trial==i, incompleteD_completeM:=predictSurvival(incompleteD_completeM_model)[1] ]
+      npathways_incompleteD_completeM <- FeatureSetEnrichmentAnalysis(incompleteD_completeM_model, "mRNA", reactome, local.statistic = "loading",
+                                           transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+      tmp_ngenesets[nsamples_downsampled==n & trial==i, incompleteD_completeM:=sum(npathways_incompleteD_completeM<0.1, na.rm=T)]
+    }
     
-    # Survival prediction
-    # tmp_survival[nsamples_downsampled==n & trial==i, incompleteD_incompleteM:=predictSurvival(incompleteD_incompleteM_model)[1] ]
-    # tmp_survival[nsamples_downsampled==n & trial==i, incompleteD_completeM:=predictSurvival(incompleteD_completeM_model)[1] ]
-    tmp_survival[nsamples_downsampled==n & trial==i, completeD_incompleteM:=predictSurvival(completeD_incompleteM_model)[1] ]
-    tmp_survival[nsamples_downsampled==n & trial==i, completeD_completeM:=predictSurvival(completeD_completeM_model)[1] ]
-    # tmp_survival[nsamples_downsampled==n & trial==i, imputed_incomplete:=predictSurvival(imputed_incomplete_model)[1] ]
-    tmp_survival[nsamples_downsampled==n & trial==i, imputed_complete:=predictSurvival(imputed_complete_model)[1] ]
+    # if (file.exists(completeD_incompleteM_file)) {
+    #   completeD_incompleteM_model <- loadModel(completeD_incompleteM_file, sortFactors=F)
+    #   tmp_nfactors[nsamples_downsampled==n & trial==i, completeD_incompleteM:=getDimensions(completeD_incompleteM_model)[["K"]]]
+    #   tmp_survival[nsamples_downsampled==n & trial==i, completeD_incompleteM:=predictSurvival(completeD_incompleteM_model)[1] ]
+    #   npathways_completeD_incompleteM <- FeatureSetEnrichmentAnalysis(completeD_incompleteM_model, "mRNA", reactome, local.statistic = "loading",
+    #                                        transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+    #   tmp_ngenesets[nsamples_downsampled==n & trial==i, completeD_incompleteM:=sum(npathways_completeD_incompleteM<0.1, na.rm=T)]
+    # }
     
-    # Number of factors
-    # tmp_nfactors[nsamples_downsampled==n & trial==i, incompleteD_incompleteM:=getDimensions(incompleteD_incompleteM_model)[["K"]]]
-    # tmp_nfactors[nsamples_downsampled==n & trial==i, incompleteD_completeM:=getDimensions(incompleteD_completeM_model)[["K"]]]
-    tmp_nfactors[nsamples_downsampled==n & trial==i, completeD_incompleteM:=getDimensions(completeD_incompleteM_model)[["K"]]]
-    tmp_nfactors[nsamples_downsampled==n & trial==i, completeD_completeM:=getDimensions(completeD_completeM_model)[["K"]]]
-    # tmp_nfactors[nsamples_downsampled==n & trial==i, imputed_incomplete:=getDimensions(imputed_incomplete_model)[["K"]]]
-    tmp_nfactors[nsamples_downsampled==n & trial==i, imputed_complete:=getDimensions(imputed_complete_model)[["K"]]]
+    # if (file.exists(completeD_completeM_file)) {
+    #   completeD_completeM_model <- loadModel(completeD_completeM_file, sortFactors=F)
+    #   tmp_nfactors[nsamples_downsampled==n & trial==i, completeD_completeM:=getDimensions(completeD_completeM_model)[["K"]]]
+    #   tmp_survival[nsamples_downsampled==n & trial==i, completeD_completeM:=predictSurvival(completeD_completeM_model)[1] ]
+    #   npathways_completeD_completeM <- FeatureSetEnrichmentAnalysis(completeD_completeM_model, "mRNA", reactome, local.statistic = "loading",
+    #                                        transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+    #   tmp_ngenesets[nsamples_downsampled==n & trial==i, completeD_completeM:=sum(npathways_completeD_completeM<0.1, na.rm=T)]
+    # }
     
-    # Number of enriched pathways in the mRNA view
-    # npathways_incompleteD_incompleteM <- FeatureSetEnrichmentAnalysis(incompleteD_incompleteM_model, "mRNA", reactome, local.statistic = "loading", 
-    #                                      transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
-    # npathways_incompleteD_completeM <- FeatureSetEnrichmentAnalysis(incompleteD_completeM_model, "mRNA", reactome, local.statistic = "loading", 
-    #                                      transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
-    npathways_completeD_incompleteM <- FeatureSetEnrichmentAnalysis(completeD_incompleteM_model, "mRNA", reactome, local.statistic = "loading",
-                                         transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
-    npathways_completeD_completeM <- FeatureSetEnrichmentAnalysis(completeD_completeM_model, "mRNA", reactome, local.statistic = "loading",
-                                         transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
-    # npathways_imputed_incomplete <- FeatureSetEnrichmentAnalysis(imputed_incomplete_model, "mRNA", reactome, local.statistic = "loading", 
-    #                                      transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
-    npathways_imputed_complete <- FeatureSetEnrichmentAnalysis(imputed_complete_model, "mRNA", reactome, local.statistic = "loading",
-                                         transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+    if (file.exists(imputed_incomplete_file)) {
+      imputed_incomplete_model <- loadModel(imputed_incomplete_file, sortFactors=F)
+      tmp_nfactors[nsamples_downsampled==n & trial==i, imputed_incomplete:=getDimensions(imputed_incomplete_model)[["K"]]]
+      tmp_survival[nsamples_downsampled==n & trial==i, imputed_incomplete:=predictSurvival(imputed_incomplete_model)[1] ]
+      npathways_imputed_incomplete <- FeatureSetEnrichmentAnalysis(imputed_incomplete_model, "mRNA", reactome, local.statistic = "loading",
+                                           transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+      tmp_ngenesets[nsamples_downsampled==n & trial==i, imputed_incomplete:=sum(npathways_imputed_incomplete<0.1, na.rm=T)]
+    }
     
-    # tmp_ngenesets[nsamples_downsampled==n & trial==i, incompleteD_incompleteM:=sum(npathways_incompleteD_incompleteM<0.1, na.rm=T)]
-    # tmp_ngenesets[nsamples_downsampled==n & trial==i, incompleteD_completeM:=sum(npathways_incompleteD_completeM<0.1, na.rm=T)]
-    tmp_ngenesets[nsamples_downsampled==n & trial==i, completeD_incompleteM:=sum(npathways_completeD_incompleteM<0.1, na.rm=T)]
-    tmp_ngenesets[nsamples_downsampled==n & trial==i, completeD_completeM:=sum(npathways_completeD_completeM<0.1, na.rm=T)]
-    # tmp_ngenesets[nsamples_downsampled==n & trial==i, imputed_incomplete:=sum(npathways_imputed_incomplete<0.1, na.rm=T)]
-    tmp_ngenesets[nsamples_downsampled==n & trial==i, imputed_complete:=sum(npathways_imputed_complete<0.1, na.rm=T)]
+    # if (file.exists(imputed_complete_file)) {
+    #   imputed_complete_model <- loadModel(imputed_complete_file, sortFactors=F)
+    #   tmp_survival[nsamples_downsampled==n & trial==i, imputed_complete:=predictSurvival(imputed_complete_model)[1] ]
+    #   tmp_nfactors[nsamples_downsampled==n & trial==i, imputed_complete:=getDimensions(imputed_complete_model)[["K"]]]
+    #   npathways_imputed_complete <- FeatureSetEnrichmentAnalysis(imputed_complete_model, "mRNA", reactome, local.statistic = "loading",
+    #                                        transformation = "abs.value", global.statistic = "mean.diff", statistical.test = "parametric", min.size=15)$pval.adj
+    #   tmp_ngenesets[nsamples_downsampled==n & trial==i, imputed_complete:=sum(npathways_imputed_complete<0.1, na.rm=T)]
+    # }
     
-    # } else { print(paste0("Error with n=",n," and trial=",i)) }
     
   }
 }

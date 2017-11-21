@@ -37,7 +37,7 @@ theme_fn <- function() {
 <!-- Varying the number of latent variables (K) -->
 ```{r}
 
-in.folder <- "/Users/ricard/data/MOFA/simulations/18Aug/results/learnK/K"
+in.folder <- "/Users/ricard/data/MOFA/simulations/results/learnK/K"
 
 files <- list.files(in.folder, pattern=".hdf5$")
 k_models <- list()
@@ -73,7 +73,7 @@ print(p)
 <!-- Varying the number of features (D) -->
 ```{r}
 
-in.folder <- "/Users/ricard/data/MOFA/simulations/18Aug/results/learnK/D"
+in.folder <- "/Users/ricard/data/MOFA/simulations/results/learnK/D"
 
 files <- list.files(in.folder, pattern=".hdf5$")
 models <- list()
@@ -103,7 +103,7 @@ dt <- data.table(
 #   theme_fn()
 
 p <- ggplot(dt, aes(x=D, y=infered_k)) +
-  geom_bar(aes(group = trial), position = "dodge", stat="identity", color="white", size=0.3, fill="grey50") +
+  geom_bar(aes(group = trial), position = "dodge", stat="identity", color="black", size=0.3, fill="grey50") +
   geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
   labs(x="Number of features", y="Number of infered factors") +
   scale_y_continuous(limits=c(0,12),breaks=c(5,10)) +
@@ -114,15 +114,15 @@ p <- ggplot(dt, aes(x=D, y=infered_k)) +
   )
 print(p)
 
-# pdf("/Users/ricard/CLL/simulations/learnK/out/D.pdf", width = 7, height = 5)
-# print(p)
-# dev.off()
+pdf("/Users/ricard/mofa_cll/simulations/learnK/out/D.pdf", width = 7, height = 5)
+print(p)
+dev.off()
 ```
 
 <!-- Varying the number of views (M) -->
 ```{r}
 
-in.folder <- "/Users/ricard/data/MOFA/simulations/18Aug/results/learnK/M"
+in.folder <- "/Users/ricard/data/MOFA/simulations/results/learnK/M"
 
 files <- list.files(in.folder, pattern=".hdf5$")
 models <- list()
@@ -130,7 +130,7 @@ for (i in 1:length(files)) {
   split <- strsplit(files[i],"_")[[1]]
   m <- split[1]
   trial <- substr(split[[2]],1,nchar(split[[2]])-5)
-  models[[paste(m,trial,sep="_")]] <- loadModel(paste0(in.folder,"/",files[i]))
+  models[[paste(m,trial,sep="_")]] <- loadModel(paste0(in.folder,"/",files[i]), sortFactors = F)
 }
 
 m_dt <- data.table(
@@ -140,7 +140,7 @@ m_dt <- data.table(
 ) %>% .[M<=21] %>% .[,M:=factor(M,levels=sort(unique(M)))]
 
 p <- ggplot(m_dt, aes(x=M, y=infered_k)) +
-  geom_bar(aes(group = trial), position = "dodge", stat="identity", color="white", size=0.3, fill="grey50") +
+  geom_bar(aes(group = trial), position = "dodge", stat="identity", color="black", size=0.3, fill="grey50") +
   geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
   labs(x="Number of views", y="Number of infered factors") +
   scale_y_continuous(limits=c(0,12),breaks=c(0,10)) +
@@ -151,15 +151,15 @@ p <- ggplot(m_dt, aes(x=M, y=infered_k)) +
   )
 print(p)
 
-# pdf("/Users/ricard/CLL/simulations/learnK/out/M.pdf", width = 7, height = 5)
-# print(p)
-# dev.off()
+pdf("/Users/ricard/mofa_cll/simulations/learnK/out/M.pdf", width = 7, height = 5)
+print(p)
+dev.off()
 ```
 
 <!-- Varying the fraction of missing values -->
 ```{r}
 
-in.folder <- "/Users/ricard/data/MOFA/simulations/18Aug/results/learnK/NA"
+in.folder <- "/Users/ricard/data/MOFA/simulations/results/learnK/NA"
 
 files <- list.files(in.folder, pattern=".hdf5$")
 models <- list()
@@ -178,7 +178,7 @@ dt <- data.table(
   .[na %in% c(0.10,0.20,0.30,0.40,0.50,0.60,0.70,0.80,0.90)]
 
 p <- ggplot(dt, aes(x=na, y=infered_k)) +
-  geom_bar(aes(group = trial), position = "dodge", stat="identity", color="white", size=0.3, fill="grey50") +
+  geom_bar(aes(group = trial), position = "dodge", stat="identity", color="black", size=0.3, fill="grey50") +
   geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
   labs(x="Fraction of missing values", y="Number of infered factors") +
   scale_y_continuous(limits=c(0,12),breaks=c(5,10)) +
@@ -189,7 +189,7 @@ p <- ggplot(dt, aes(x=na, y=infered_k)) +
   )
 print(p)
 
-pdf("/Users/ricard/CLL/simulations/learnK/out/NA.pdf", width = 8, height = 5)
+pdf("/Users/ricard/MOFA_CLL/simulations/learnK/out/NA.pdf", width = 8, height = 5)
 print(p)
 dev.off()
 ```
