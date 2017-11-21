@@ -1,0 +1,122 @@
+---
+title: "Overview CLL data used for MOFA"
+author: "Britta Velten"
+date: "6/28/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+
+```{r}
+library(MOFAtools)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+```
+
+# Load data
+```{r}
+load("~/Documents/MOFA/Analysis_Code/MOFA_CLL/data4package/CLL_data.RData")
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_CLL_overview"
+
+# re-name
+names(CLL_data)[grepl("Drugs", names(CLL_data))] <- "Drug response"
+sapply(CLL_data, dim)
+```
+
+# Check presence
+```{r}
+#binary matrix patients x views: Does a patient has at least one measurement in a given view?
+ovw <- sapply(CLL_data, function(dat) apply(dat,2,function(pat) !all(is.na(pat))))
+
+# sub set to number of patients with any measurement
+sum(apply(ovw,1,any))
+ovw <- ovw[apply(ovw,1,any),]
+
+# in the mutation views not only IGHV is measured:
+all(apply(!is.na(CLL_data$Mutations[!rownames(CLL_data$Mutations)=="IGHV",]),2,any) == ovw[,"Mutations"])
+
+# melt binary matrix to data.frame
+molten_ovw <- melt(ovw, varnames =c("PatID", "omic"))
+
+# order omic and patients
+molten_ovw$omic <- factor(molten_ovw$omic, levels = rev(c("Mutations", "Methylation", "Drug response", "mRNA")))
+molten_ovw$PatID <- factor(molten_ovw$PatID, levels = rownames(ovw)[order(rowSums(ovw), decreasing = T)])
+
+# number of patients and features
+molten_ovw$combi <- ifelse(molten_ovw$value, as.character(molten_ovw$omic), "missing")
+molten_ovw$ntotal <- paste("n=", colSums(ovw)[as.character(molten_ovw$omic) ], sep="")
+molten_ovw$ptotal <- paste("d=", sapply(CLL_data, nrow)[as.character(molten_ovw$omic) ], sep="")
+
+```
+
+#Set colours
+Define colors for omics (miRNA and lincRNA are no longer used)
+
+```{r}
+myPalette <- c(RColorBrewer::brewer.pal(8,"Dark2"),RColorBrewer::brewer.pal(9,"Set1"))
+RNAseq <- RColorBrewer::brewer.pal(3,"Greens")
+others <-myPalette[c(2,10,6)]
+names(RNAseq) <- c("lincRNA", "miRNA", "mRNA")
+names(others) <- c("Mutations", "Methylation", "Drug response")
+cols4omics <- c(RNAseq,others)
+cols4omics <- cols4omics[c("mRNA", "Mutations", "Methylation", "Drug response")]
+```
+
+
+## Tile plot
+```{r}
+pdf(file.path(plotdir, "tile_cll.pdf"), width = 5, height = 5)
+
+molten_ovw %<>% mutate(omic_label = paste(omic, ptotal, sep="\n"))
+gg1 <- ggplot(molten_ovw, aes(x=PatID, y=omic_label, fill=combi, width=0.7, height=0.9), col="black")+geom_tile() +
+  scale_fill_manual(values = c('missing'="grey", cols4omics))+
+    guides(fill=F) +  xlab("Patients (n=200)") + 
+  theme(axis.text.x =element_blank(),
+        panel.background = element_rect(fill="white"),
+        text = element_text(size=16),
+        # plot.title = element_text(hjust = 5),
+        axis.ticks.y = element_blank(),
+        axis.ticks.x= element_blank(),
+        axis.text.y = element_text(color="black"),
+        panel.grid = element_line(colour = "black"),
+        plot.margin = unit(c(5.5,2,5.5,5.5), "pt")) +
+  ylab("") +ggtitle("Samples available in the CLL study") +
+  geom_text(data=filter(molten_ovw, PatID=="H024"),aes(x=70,label=ntotal), size=6)
+
+gg1
+
+dev.off()
+```
+
+## Venn Diagram
+```{r, eval=FALSE}
+library(VennDiagram)
+ovw_list <- apply(ovw, 2, function(x) rownames(ovw)[x])
+ovw_list$covariates <- NULL
+ovw_list$RNAseq <- ovw_list$mRNA
+venn.diagram(x=ovw_list[c("Methylation", "Mutations", "Drug response", "RNAseq")], 
+             filename = file.path(plotdir, "cll_Venn.tiff"), fill = cols4omics[c("Methylation", "Mutations", "Drug response", "mRNA")])
+```
+
+
+## UpSet plot
+```{r, eval=FALSE}
+library(UpSetR)
+list_part <- ovw_list[c("Methylation", "Mutations", "Drug response", "RNAseq")]
+col_parts <- cols4omics[c("Methylation", "Mutations", "Drug response", "mRNA")]
+pdf(file.path(plotdir, "Upset_CLL_part.pdf"), width = 7, height = 5, onefile = F)
+upset(fromList(list_part), nintersects=NA,
+      sets.bar.color=col_parts[order(sapply(list_part, length), decreasing = T)], sets.x.label = "Number of patients")
+dev.off()
+
+pdf(file.path(plotdir, "Upset_CLL_all.pdf"), width = 7, height = 5, onefile = F)
+list_all <- ovw_list[names(cols4omics)[c(3:1,4:6)]]
+upset(fromList(list_all), nintersects=NA, nsets=10,
+      sets.bar.color=cols4omics[order(sapply(list_all, length), decreasing = T)], sets.x.label = "Number of patients")
+dev.off()
+```
+
