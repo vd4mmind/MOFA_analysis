@@ -15,7 +15,6 @@ library(MOFAtools)
 library(dplyr)
 library(reshape2)
 library(pheatmap)
-library(survival)
 library(gridExtra)
 library(ggplot2)
 library(GGally)
@@ -28,25 +27,26 @@ library(pace)
 # I/O - Options
 ```{r}
 #output path for plots and data
-plotdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/figures"
-outdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/out"
+plotdir <- "figures/import"
+outdir <- "out"
 if(!dir.exists(plotdir)) dir.create(plotdir)
 if(!dir.exists(outdir)) dir.create(outdir)
 
 # paths to data
+dataDir <- "../data"
 # output directory containing all trained MOFA models
-mofaDir <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/out/test_final/17Aug/"
+mofaDir <- "../data/MOFA_fits"
 ```
 
 # Load fitted models
 In total, 25 models are fitted on patients with at least two views observed (n=200). k (=number of factors) is learnt, intercept term is learned. For details see run_MOFA/run_multiple.sh.
 The following views are included: Mutations (>= 3 occurences), Methylation (top 1%, no XY), mRNA (top 5000, no Y), Drugs (all).
 ```{r}
-files <- list.files(mofaDir)
+files <- list.files(dataDir)
 files <- files[grepl(".hdf5",files)]
 
 # load models, detect passengers and sort factors by R2
-AllModels <- lapply(files, function (filenm) loadModel(file.path(mofaDir, filenm), sortFactors = T))
+AllModels <- lapply(files, function (filenm) loadModel(file.path(dataDir, filenm), sortFactors = T))
 
 names(AllModels) <- sub(".hdf5","", files)
 ```
@@ -55,7 +55,7 @@ names(AllModels) <- sub(".hdf5","", files)
 Set nice names
 ```{r}
 # get gene annotations from ENSEMBL
-mRNA_file <- "~/Documents/BioMart/Hsapiens_genes_BioMart.75.txt"
+mRNA_file <- file.path(dataDir,"Hsapiens_genes_BioMart.75.txt")
 mRNA = read.csv(file=mRNA_file,header=T,sep="\t",stringsAsFactors=F)
 
 # get drug annotations from pace package

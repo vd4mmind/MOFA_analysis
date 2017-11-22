@@ -29,9 +29,9 @@ library(beeswarm)
 (Prepared in import_models.Rmd)
 ```{r}
 #output path for plots and data
-plotdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/figures"
+plotdir <- "figures/factor1"
 if(!dir.exists(plotdir)) dir.create(plotdir)
-outdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/out"
+outdir <- "out"
 
 # load model selected in import_models.Rmd
 load(file.path(outdir,"out_import.RData"))

@@ -21,7 +21,7 @@ library(gridExtra)
 # Load data
 ```{r}
 data("CLL_data", package = "MOFAtools")
-plotdir <- "/Users/bvelten/Documents/MOFA/Analysis_Code/MOFA_CLL/figures"
+plotdir <- "figures/data_overview"
 if(!dir.exists(plotdir)) dir.create(plotdir)
 
 # re-name
