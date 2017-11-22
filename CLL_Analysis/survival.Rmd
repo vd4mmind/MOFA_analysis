@@ -1,7 +1,7 @@
 ---
-title: "MOFA - CLL Survival Analysis using latent factors "
+title: "Association of latent factors to time to next treatment"
 author: "Britta Velten"
-date: "7/4/2017"
+date: "04/07/2017"
 output:
   BiocStyle::html_document:
     toc: true
@@ -41,8 +41,9 @@ load(file.path(outdir,"out_import.RData"))
 # Get survival data from Dietrich et al
 The patmeta and covariates objects are constucted in import_models.Rmd on the basis of the pace package.
 ```{r}
+data(patmeta, package="pace")
 survivalData <- as.matrix(patmeta[,c("T5","treatedAfter")])
-survivalData<- survivalDataTTT[!is.na(survivalDataTTT[,1]),]
+survivalData<- survivalData[!is.na(survivalData[,1]),]
 colnames(survivalData)<-c("time", "status")
   
 # subset to common patients
@@ -75,28 +76,35 @@ df_survival <- as.data.frame(t(pval_LFs))
 df_survival$label <- paste(formatC(df_survival$p, digits = 2), sep="")
 df_survival$predictor <- factor(paste("Factor",colnames(pval_LFs)), levels=rev(paste("Factor",colnames(pval_LFs))))
 df_survival
+
+# re-orient to HR > 1
+df_survival %<>% mutate(positive = coef>1)
+df_survival %<>% mutate(y = ifelse(positive,coef, 1/coef))
+df_survival %<>% mutate(ymin = ifelse(positive,lower, 1/lower))
+df_survival %<>% mutate(ymax = ifelse(positive,higher, 1/higher))
 ```
 
 ## Forest Plot
-```{r}
-pdf(file.path(plotdir, "ForestPlotSurvival_TTT.pdf"), width = 7, height = 12)
+```{r, fig.width = 7, fig.height = 12}
+# pdf(file.path(plotdir, "ForestPlotSurvival_TTT.pdf"), width = 7, height = 12)
 # TTT
-ggplot(df_survival, aes(x=predictor,y=coef,ymin=lower,ymax=higher))+
+ggplot(df_survival, aes(x=predictor, y=y,ymin=ymin,ymax=ymax))+
   geom_pointrange( col='#619CFF')+ coord_flip() +
-  scale_x_discrete() + ylab("Hazard Ratio")+
-  scale_y_log10(breaks=c(0.1,0.3,1,3), limits=c(min(df_surv$lower),5)) +
-  geom_hline(aes(yintercept=1), linetype="dotted") +
-  ggtitle("Predictiveness of time to treatment") +
-  geom_text(aes(label=label, y=4),size=4.5, vjust = 0)+
-  theme(text =element_text(size=16),
+  scale_x_discrete() + ylab("(Positive) Hazard Ratio")+ 
+  scale_y_log10(breaks=c(0.75,1,1.5,2,3), limits=c(min(df_survival$ymin)-0.1,3.1)) +
+  geom_hline(aes(yintercept=1), linetype="dotted") + 
+  geom_text(aes(label=label, y=2.5),size=5, hjust = "left")+
+  theme(text =element_text(size=18),
         axis.ticks.y = element_blank(),
         legend.position="bottom", panel.grid =element_blank(),
         panel.background = element_rect(fill="white"),
         strip.text = element_blank(),
-        axis.text.y = element_text(size=15),
+        axis.text.y = element_text(size=16),
+        axis.text.x = element_text(size=16),
         plot.title = element_text(size=18)) +
-xlab("")
-dev.off()
+  guides(colour=F) +
+  xlab("Factor") + scale_color_discrete(drop=FALSE)
+# dev.off()
 ```
 
 
@@ -164,7 +172,7 @@ Both models using PCs and no penalization as well as using all features with a r
 
   # calculate summary statistics across folds
   summaryHc <- aggregate(df_hc$CI,
-    by = list(predictors = df_hc$predictor, survType=df_hc$survType), 
+    by = list(predictors = df_hc$predictor), 
     FUN = function(x) c(mean = mean(x), sd = sd(x),
                         n = length(x)))
   summaryHc <- do.call(data.frame, summaryHc)
@@ -175,15 +183,14 @@ Both models using PCs and no penalization as well as using all features with a r
 
 ## Define colors for barplot
 ```{r}
-# define colors
-# cols4survival <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-cols4survival <- c("#E69F00","#D55E00","#009E73", "#56B4E9",  "#999999","#0072B2","#0072B2","#0072B2","#0072B2", "#0072B2")
-names(cols4survival) <- c("Methylation", "Mutations","mRNA",  "Drugs", "all", "MOFA factors", "factor 1", "factor 7", "factor 8", "factors 1,7,8")
+cols4survival <- c("#E69F00","#D55E00","#009E73", "#56B4E9",  "#999999","#0072B2")
+names(cols4survival) <- c("Methylation", "Mutations","mRNA",  "Drugs", "all", "MOFA factors")
 ```
 
 ## Main Plot 4(a): PCs as predictors
+Plot the resulting prediciton performance when principal componenets are included as predictors in a multivariate Cox model.
 ```{r}
-summaryHc_main <- filter(summaryHc, survType == "Time to next treatment",
+summaryHc_main <- filter(summaryHc,
                          predictors %in% c(names(data), "all", "MOFA factors"))
 limits <- aes(ymax = summaryHc_main$x.mean + summaryHc_main$se,
               ymin = summaryHc_main$x.mean - summaryHc_main$se)
@@ -192,11 +199,10 @@ summaryHc_main$predictors <- factor(summaryHc_main$predictors,
                                                "all", "MOFA factors"))
 
 # barplot
-pdf(file.path(plotdir, "HarrelsC_TTT.pdf"))
+# pdf(file.path(plotdir, "HarrelsC_TTT.pdf"))
   ggplot(summaryHc_main, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
     geom_bar(stat = "identity") + 
    coord_cartesian(ylim = c(0.5,0.85)) +
-  # ggtitle(paste("Prediction of time to treatment"))+
   scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + 
   geom_errorbar(limits, position = "dodge", width = 0.25)+
   theme(axis.text.x = element_text(angle = 45, hjust = 1, size=18),
@@ -207,25 +213,25 @@ pdf(file.path(plotdir, "HarrelsC_TTT.pdf"))
         legend.position= "none",
         plot.title = element_text(size=20)) +
   ylab("Harrell's C-index") + xlab("")
-dev.off()
+# dev.off()
 ```
 
 ## Supplement S14: All features as predictors
+Plot the resulting prediciton performance when all features are included as predictors in a multivariate Cox model with ridge penalty.
 ```{r}
-summaryHc_supp <- filter(summaryHc, survType == "Time to next treatment",
+summaryHc_supp <- filter(summaryHc,
                          predictors %in% c(paste(c(names(data), "all"), "full", sep="_"), "MOFA factors"))#, "factors 1,7,8"))
 limits <- aes(ymax = summaryHc_supp$x.mean + summaryHc_supp$se,
               ymin = summaryHc_supp$x.mean - summaryHc_supp$se)
 summaryHc_supp$predictors <- factor(sapply(summaryHc_supp$predictors, function(nm) sub("_full","",nm)),
                                     levels =c("Methylation", "Mutations","mRNA",  "Drugs",
-                                               "all", "MOFA factors"))#, "factors 1,7,8"))
+                                               "all", "MOFA factors"))
 
 # barplot
-pdf(file.path(plotdir, "HarrelsC_TTT_supp.pdf"))
+# pdf(file.path(plotdir, "HarrelsC_TTT_supp.pdf"))
   ggplot(summaryHc_supp, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
     geom_bar(stat = "identity") + 
    coord_cartesian(ylim = c(0.5,0.85)) +
-  ggtitle(paste("Prediction of time to treatment"))+
   scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + 
   geom_errorbar(limits, position = "dodge", width = 0.25)+
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -234,23 +240,26 @@ pdf(file.path(plotdir, "HarrelsC_TTT_supp.pdf"))
         legend.position= "none",
         plot.title = element_text(size=20)) +
   ylab("Harrell's C-index") + xlab("")
-dev.off()
+# dev.off()
 ```
 
 
 # Kaplan-Meier plots
-## all MOFA factors
-```{r, fig.height=12, fig.width=12}
-
-  # KM for all LFs
- glist <- lapply(as.character(1:(ncol(Z)-1)), function(lfno){
+To visualize the association of the factor to clinical outcome. Samples are split into two groups based on the continious factors and a Kaplan Meier plot is made for those groups. Note that this is mainly for visualisation purposes, usually the continious factor should be considered as above in the Cox models.
+```{r, fig.width=10.5, fig.height=3.5}
+  # calculate KM for all LFs
+  glist <- lapply(as.character(1:(ncol(Z)-1)), function(lfno){
+  
+  #determine optimal cut-point and classify samples accordingly
+  df <- data.frame(time=survivalData[,1], event = survivalData[,2], Zcommon)
   cut <- survminer::surv_cutpoint(df, variables=paste("X", lfno, sep=""))
   df$FactorCluster <- Zcommon[,lfno] > cut$cutpoint$cutpoint
-  # HACK, orient factors st colors are consisten for upper and lower group
+  
+  # due to rotational invariance of factors just use same colors for upper and lower group in the KM plot 
+  # (irrescpecitve of which end of the factor they belong to)
   if(lfno==7) df$FactorCluster <- Zcommon[,lfno] < cut$cutpoint$cutpoint
 
-  if(survType=="TTT") xlab <- "Time to treatment" else xlab <- "Overall Survival"
-  
+  # fit survival model for the given factor
   fit <- survfit(Surv(time, event) ~ FactorCluster, df)
   ggLF <- survminer::ggsurvplot(fit, data =df,
                         conf.int = TRUE,
@@ -258,24 +267,22 @@ dev.off()
                         fun = function(y) y*100,
                         legend = "none",
                         legend.labs = c(paste("low LF", lfno), paste("high LF", lfno)),
-                        xlab = xlab,
+                        xlab = "Time to treatment",
                         ylab=ifelse(lfno==1, "Survival probability (%)", ""),
-                        title= paste("Factor", lfno)#,
-                        # ggtheme = theme(axis.text =element_text(size=22),
-                                        # axis.title = element_text(size=22),
-                                        # title = element_text(size=22))
+                        title= paste("Factor", lfno)
                         )
-
-  pdf(file.path(plotdir, paste("KaplanMeier_",survType,"_LF",lfno,".pdf", sep="")), width=7, height=5)
-  print(ggLF$plot)
-  dev.off()
   ggLF$plot
  })
  
- # joint plot of significant factors:
-  pdf(file.path(plotdir, "KaplanMeier_signif.pdf"), width=10.5, height=3.5)
+ # make joint plot of significant factors:
+  # pdf(file.path(plotdir, "KaplanMeier.pdf"), width=10.5, height=3.5)
     grid.arrange(glist[[1]], glist[[7]], glist[[8]], ncol=3) 
-    # do.call("grid.arrange", glist[c(1,7,8)], ncol=3)
-  dev.off()
-
+  # dev.off()
 ```
+
+
+# SessionInfo
+```{r}
+sessionInfo()
+```
+

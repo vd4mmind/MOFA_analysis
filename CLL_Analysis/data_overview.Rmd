@@ -1,7 +1,7 @@
 ---
 title: "Overview CLL data used for MOFA"
 author: "Britta Velten"
-date: "6/28/2017"
+date: "28/06/2017"
 output:
   BiocStyle::html_document:
     toc: true
@@ -9,7 +9,7 @@ output:
 # Introduction
 This script provides an overview of the data used as input for the MOFA model.
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 library(MOFAtools)
 library(magrittr)
 library(dplyr)
@@ -29,7 +29,7 @@ names(CLL_data)[grepl("Drugs", names(CLL_data))] <- "Drug response"
 sapply(CLL_data, dim)
 ```
 
-# Check presence
+# Check data presence
 ```{r}
 #binary matrix patients x views: Does a patient has at least one measurement in a given view?
 ovw <- sapply(CLL_data, function(dat) apply(dat,2,function(pat) !all(is.na(pat))))
@@ -55,7 +55,7 @@ molten_ovw$ptotal <- paste("d=", sapply(CLL_data, nrow)[as.character(molten_ovw$
 
 ```
 
-#Set colours
+# Set colors
 Define colors for omics
 
 ```{r}
@@ -65,9 +65,9 @@ names(cols4omics) <- c("Mutations", "Methylation", "Drug response", "mRNA")
 ```
 
 
-# Tile plot
-```{r}
-pdf(file.path(plotdir, "tile_cll.pdf"), width = 5, height = 5)
+# Make tile plot
+```{r, fig.width = 5, fig.height = 5}
+# pdf(file.path(plotdir, "tile_cll.pdf"), width = 5, height = 5)
 
 # y-axis label
 molten_ovw %<>% mutate(omic_label = paste(omic, ptotal, sep="\n"))
@@ -89,5 +89,10 @@ gg1 <- ggplot(molten_ovw, aes(x=PatID, y=omic_label, fill=combi, width=0.7, heig
 
 gg1
 
-dev.off()
+# dev.off()
+```
+
+# SessionInfo
+```{r}
+sessionInfo()
 ```
