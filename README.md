@@ -12,31 +12,22 @@ Content
 -------
 * `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data [overview](CLL_Analysis/README.md)
 1) import_models.Rmd: 
-- imports .hdf5 model files produced by mofa in Python
-- sets proper names to models
-- tests robustness across initializations and old fits with common patients
-- picks a model based on ELBO for further analysis
-- gets relevant stuff from the model and Metadata from PACE package
-- plots correlation of factors
-- save to "out_import.RData" used for the other scripts
+** imports .hdf5 model files produced by mofa in Python
+** tests robustness across initializations, picks a model based on ELBO for further analysis and checks the factors' correlation
+** saves relevant model and relevant data from the original study (Dietrich, Oles, Lu et al 2017) to "out_import.RData" used for the other scripts
 
 2) data_overview.Rmd
-- generates the overview tile plot on data in the CLL data set used as input data for MOFA
+** generates the overview tile plot on data in the CLL data set used as input data for MOFA
 
 3) MOFAfactors_overview.Rmd
-- Code for Figure 2
-- imports "out_import.RData" generated in (1)
+** Code for Figure 2
 
 4) Analysis_Factor1.Rmd
-- Code for Figure 3 and S10 (imputation of IGHV label)
-- imports "out_import.RData" generated in (1)
+** Code for Figure 3 and S10 (imputation of IGHV label)
 
 5) survival.Rmd
-- Code for Figure 4 and S14 (survival prediction)
-- imports "out_import.RData" generated in (1)
+** Code for Figure 4 and S14 (survival prediction)
 
-Utility function are in
-- plotting_utils.R
 
 * `/continuity/`: characterisation of the continous IGHV phenotype
 * `/downsampling/`: downsampling analysis
