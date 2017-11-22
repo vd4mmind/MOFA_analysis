@@ -11,24 +11,24 @@ Multi-omic studies in large cohorts promise to characterize biological processes
 Content
 -------
 * `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data. In the 
-    1) import_models.Rmd [html](http://htmlpreview.github.com/?https://github.com/rargelaguet/MOFA_CLL/blob/master/CLL_Analysis/import_models.html)
+    1) import_models.Rmd [html](CLL_Analysis/import_models.html)
         * imports .hdf5 model files produced by mofa in Python
         * tests robustness across initializations, picks a model based on ELBO for further analysis and checks the factors' correlation
         * saves relevant model and relevant data from the original study (Dietrich, Oles, Lu et al 2017) to "out_import.RData" used for the other scripts
 
-    2) data_overview.Rmd [html](http://htmlpreview.github.com/?https://github.com/rargelaguet/MOFA_CLL/blob/master/CLL_Analysis/CLL_Analysis/data_overview.html)
+    2) data_overview.Rmd [html](CLL_Analysis/data_overview.html)
         * generates the overview tile plot on data in the CLL data set used as input data for MOFA (part of Fig. 2)
 
-    3) MOFAfactors_overview.Rmd  [html](http://htmlpreview.github.com/?https://github.com/rargelaguet/MOFA_CLL/blob/master/CLL_Analysis/CLL_Analysis/MOFAfactors_overview.html)
+    3) MOFAfactors_overview.Rmd  [html](CLL_Analysis/MOFAfactors_overview.html)
         * Code for Figure 2 (Factor overview)
 
-    4) Analysis_Factor1.Rmd  [html](http://htmlpreview.github.com/?https://github.com/rargelaguet/MOFA_CLL/blob/master/CLL_Analysis/CLL_Analysis/Analysis_Factor1.html)
+    4) Analysis_Factor1.Rmd  [html](CLL_Analysis/Analysis_Factor1.html)
         * Code to charatcerize Factor 1 (Figure 3)
     
-    5) IGHVstatus.Rmd  [html](http://htmlpreview.github.com/?https://github.com/rargelaguet/MOFA_CLL/blob/master/CLL_Analysis/CLL_Analysis/IGHVstatus.html)
+    5) IGHVstatus.Rmd  [html](CLL_Analysis/IGHVstatus.html)
         * Code to compare IGHV groups with 2 groups based on Factor 1
     
-    6) survival.Rmd  [html](http://htmlpreview.github.com/?https://github.com/rargelaguet/MOFA_CLL/blob/master/CLL_Analysis/CLL_Analysis/survival.html)
+    6) survival.Rmd  [html](CLL_Analysis/CLL_Analysis/survival.html)
         * Code for Figure 4 and S14 (survival prediction)
 
 
