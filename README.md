@@ -10,22 +10,25 @@ Multi-omic studies in large cohorts promise to characterize biological processes
 
 Content
 -------
-* `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data [overview](CLL_Analysis/README.md)
-    1) import_models.Rmd: 
+* `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data. In the 
+    1) import_models.Rmd [html](CLL_Analysis/import_models.html)
         * imports .hdf5 model files produced by mofa in Python
         * tests robustness across initializations, picks a model based on ELBO for further analysis and checks the factors' correlation
         * saves relevant model and relevant data from the original study (Dietrich, Oles, Lu et al 2017) to "out_import.RData" used for the other scripts
 
-    2) data_overview.Rmd
+    2) data_overview.Rmd [html](CLL_Analysis/data_overview.html)
         * generates the overview tile plot on data in the CLL data set used as input data for MOFA (part of Fig. 2)
 
-    3) MOFAfactors_overview.Rmd
+    3) MOFAfactors_overview.Rmd  [html](CLL_Analysis/MOFAfactors_overview.html)
         * Code for Figure 2 (Factor overview)
 
-    4) Analysis_Factor1.Rmd
-        * Code for Figure 3 and S10 (imputation of IGHV label)
-
-    5) survival.Rmd
+    4) Analysis_Factor1.Rmd  [html](CLL_Analysis/Analysis_Factor1.html)
+        * Code to charatcerize Factor 1 (Figure 3)
+    
+    5) IGHVstatus.Rmd  [html](CLL_Analysis/IGHVstatus.html)
+        * Code to compare IGHV groups with 2 groups based on Factor 1
+    
+    6) survival.Rmd  [html](CLL_Analysis/survival.html)
         * Code for Figure 4 and S14 (survival prediction)
 
 
@@ -43,6 +46,7 @@ Content
 
 Data
 -------
+ The data directory contains annotations used from ENSEMLBE for the gene expression data as well as the fitted MOFA models used for the main analysis.
 
 Contact
 -------
