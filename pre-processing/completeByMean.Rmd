@@ -1,0 +1,32 @@
+---
+title: "Impute by Mean to complete data"
+author: "Britta Velten"
+date: "11/7/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+To compare performance of MOFA using all samples with imputing first, here complete CLL data by imputing by mean.
+
+```{r}
+writeDir<-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/views/minView=2_completedByMean/"
+if(!dir.exists(writeDir)) dir.create(writeDir)
+dataDir<-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/views/minView=2/"
+```
+
+```{r}
+datafiles <- list.files(dataDir)
+DataList <- lapply(datafiles, function(file) read.table(file.path(dataDir, file))) #fread does not support rownames?
+sapply(DataList,dim)
+names(DataList) <- datafiles
+```
+
+
+```{r}
+ImputeByMean <- function(x) {x[is.na(x)] <- mean(x, na.rm=TRUE); return(x)}
+imp_mean <- lapply(DataList[!grepl("covariates", names(DataList))], function(dat) apply(dat,2,ImputeByMean))
+for(nm in names(imp_mean)) write.table(imp_mean[[nm]], file=file.path(writeDir,nm),
+                row.names=TRUE, col.names=TRUE, quote=F)
+```
+
