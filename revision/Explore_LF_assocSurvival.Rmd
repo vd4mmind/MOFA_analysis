@@ -9,8 +9,7 @@ output:
 
 ```{r, message=F, warning=F}
 setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
-devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
-# library(MOFAtools)
+library(MOFAtools)
 library(dplyr)
 library(reshape2)
 library(pheatmap)
@@ -31,10 +30,10 @@ knitr::opts_chunk$set(fig.height = 10)
 # Get imported model and related data
 Prepared in CLL_import_technical.Rmd
 ```{r}
-load("../code4manuscript/out_import_technical_flipped.RData")
+load("out_import_technical_flipped.RData")
 model@ModelOpts$learnIntercept <- TRUE
 #output path for plots
-plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/exploratory/figures"
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/LF78"
 if(!dir.exists(plotdir)) dir.create(plotdir)
 ```
 
@@ -189,5 +188,63 @@ ggplot(pvalDF, aes(x= LF, y=neg.log.p.adj,col=covariate))+geom_point() +
   coord_flip() + ylab("Neg. log p-value (adjusted)") + xlab("Latent Factor") +
   theme_bw() +geom_text(aes(y= -log(fdr), hjust=-0.1, x=ncol(Z)-1, label=paste("FDR", fdr*100,"%")), col="red") +
   scale_color_manual(values=cols) 
+```
+
+# Differential expression analysis
+```{r}
+data('dds', package="pace")
+all(colData(dds)$PatID %in% rownames(Z))
+colData(dds)$LF8 <- Z[colData(dds)$PatID,"8"]
+dds <- DESeqDataSet(dds, ~LF8)
+dds <- DESeq(dds)
+res <- results(dds)
+sum(res$padj < 0.1, na.rm=TRUE)
+resSig <- subset(res, padj < 0.1)
+resSig$geneid <- rownames(resSig)
+resSig$symbol= sapply(resSig$geneid, function(g) filter(mRNA, ens_id==g)$symbol)
+
+as.data.frame(head(resSig[ order(resSig$log2FoldChange), ], n=100))
+
+lfcT<-0
+downreg<-subset(resSig, padj<0.10& log2FoldChange<lfcT)
+upreg<-subset(resSig, padj<0.10& log2FoldChange>lfcT)
+```
+
+```{r}
+library(GSEABase)
+library(MatchIt)
+library(DT)
+source("~/Documents/Interactome_DKFZ/analysis/helper.R")
+# try hallmark gene sets
+HallmarkmSigDB<-getGmt("~/Documents/Interactome_DKFZ/h.all.v5.1.symbols.gmt")
+toTest<-names(HallmarkmSigDB)
+UpGenes<-tolower(upreg$symbol)
+df <- data.frame( significant= 1*(rownames(res) %in% rownames(upreg)),
+                      means=res$baseMean )
+    mm <- matchit( significant ~ means,
+                   df, method="nearest",
+                   distance="mahalanobis" )
+    b <- as.numeric(mm$match.matrix[,1])
+    background<-tolower(res$symbol[b])
+    test.result<-testForGSE( toTest, UpGenes, background)
+    table.out<-as.data.frame(test.result)
+x.up<-datatable(table.out, 
+                 caption = "Hallmark genes sets enriched in at a FDR < 10% caption upregulated genes")
+#nonoe
+
+HallmarkmSigDB<-getGmt("~/Documents/Interactome_DKFZ/h.all.v5.1.symbols.gmt")
+toTest<-names(HallmarkmSigDB)
+UpGenes<-tolower(downreg$symbol)
+df <- data.frame( significant= 1*(rownames(res) %in% rownames(downreg)),
+                      means=res$baseMean )
+mm <- matchit( significant ~ means,
+                   df, method="nearest",
+                   distance="mahalanobis" )
+b <- as.numeric(mm$match.matrix[,1])
+background<-tolower(res$symbol[b])
+test.result<-testForGSE( toTest, UpGenes, background)
+table.out<-as.data.frame(test.result)
+x.down <-datatable(table.out, 
+                 caption = "Hallmark genes sets enriched in at a FDR < 10% caption upregulated genes")
 ```
 
