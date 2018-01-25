@@ -85,6 +85,19 @@ legend("top", legend = c("LZ", "IZ", "HZ"),
 # dev.off()    
 ```
 
+## Samples breakdown by number of views
+```{r}
+all(names(ZMC)==names(MC))
+df_MC <- data.frame(MC=MC, ZMC=ZMC, patID=names(MC))
+df_MC <- cbind(df_MC,t(sapply(df_MC$patID, function(p) sapply(model@TrainData, function(l) !all(is.na(l[,p]))))))
+
+table(df_MC$ZMC, df_MC$Drugs)
+table(df_MC$ZMC, df_MC$mRNA)
+table(df_MC$ZMC, df_MC$Methylation)
+table(df_MC$ZMC, df_MC$Mutations)
+table(df_MC$ZMC)
+```
+
 
 
 # Characterization in the mRNA view
