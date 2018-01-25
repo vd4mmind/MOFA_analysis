@@ -1,0 +1,177 @@
+---
+title: "Investigate 12 cases of disagreeing IGHV"
+author: "Britta Velten"
+date: "4/10/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+library(beeswarm)
+# library(pace)
+```
+
+#Load model used for paper
+```{r}
+load("out_import_technical_flipped.RData")
+
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_IGHVmismatch"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+
+# idx for IGHV latent factor
+idx_ighv <- "1"
+
+# helper function for some plots
+source("plottingUtils.R")
+
+options(stringsAsFactors = FALSE)
+```
+
+# Get MC, IGHV and MOFA's classifications
+```{r}
+# methylation cluster
+MC <- covariates[, "MethylationCluster"]
+MC[is.na(MC)] <- "missing"
+names(MC) <- rownames(covariates)
+
+# IGHV status
+IGHV <- covariates[,"IGHV"]
+IGHV[is.na(IGHV)] <- "missing"
+names(IGHV) <- rownames(covariates)
+
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
+ZMC <- ZMC$cluster
+# ZMC 
+# table(paste(ZMC,MC))
+# ZMC <- ifelse(ZMC==1, "HP", ifelse(ZMC==2, "LP", "IP"))
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+table(MC, ZMC)
+
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZIGHV <- kmeans(Z[,idx_ighv], 2, nstart=1000, iter.max = 1000)
+ZIGHV <- ZIGHV$cluster
+# ZIGHV 
+
+# label clusters as U and M-CLL
+IGHV[IGHV==0] <- "U"
+IGHV[IGHV==1] <- "M"
+ZIGHV[ZIGHV==1]<-"M"
+ZIGHV[ZIGHV==2]<-"U"
+
+# collect labels and factor values in data-frame
+df_clustering <- data.frame(IGHV = as.factor(IGHV), ZMC = ZMC, ZIGHV=ZIGHV,
+                            MC = as.factor(MC), patID = rownames(Z),
+                            Z = Z[,idx_ighv])
+
+#check agreement between clusters
+clagree <- paste(ZIGHV ,IGHV, sep="_")
+clagree <- ifelse(clagree %in% c("M_M", "U_U"), "agreement with label",
+                  ifelse(grepl("missing",clagree), "label missing",
+                         ifelse(clagree=="M_U", "U-CLL clustered as M-CLL", "M-CLL clustered as U-CLL" )))
+
+df_clustering$agreement <- clagree
+```
+
+
+# Load additional information on patients
+```{r}
+# match to Patient Id
+load("~/Documents/cll/var/encPatientID_160218.RData")
+df_clustering$patID2 <- encPatientID$PatientID[match(as.character(df_clustering$patID), encPatientID$PatientID2)]
+# write.csv(df_clustering, file="IGHV_imputed.csv")
+
+# add extended meta data
+patmeta_pace <- patmeta
+load("~/Documents/cll/var/patmeta_150609.RData")
+patmeta_all <-patmeta
+rm(patmeta)
+df_meta <- cbind(df_clustering, patmeta_all[as.character(df_clustering$patID2), grepl("IGHV|pat", colnames(patmeta_all))])
+
+# add mutation data
+df_meta <- cbind(df_meta,t(data$Mutations)[as.character(df_clustering$patID), colnames(t(data$Mutations))!=
+                                             "IGHV"])
+df_meta$agree <- ifelse(grepl("clustered",df_meta$agreement),0,ifelse(grepl("missing",df_meta$agreement), NA, 1))
+
+write.csv(df_meta, file="IGHV_meta_revision.csv")
+
+df_meta$V3_21 <- df_meta$"IGHV clinical gene usage"=="V3-21"
+
+df_meta_dis <- filter(df_meta, agree==0)
+write.csv(df_meta_dis, file="missclassified_cases_muta_revision.csv")
+
+df_meta_dis_short <- df_meta_dis[, sapply(colnames(df_meta_dis), function(cnm){
+  c <- df_meta_dis[,cnm]
+ !all(c[!is.na(c)]==0)
+})]
+write.csv(df_meta_dis_short, file="missclassified_cases_mut_short_revision.csv")
+```
+
+Do we have data from other screens on the three patients which are misclassified? YES : CPS1000
+```{r}
+extremeCases <- filter(df_meta_dis,  MC !="IP")
+extremeCases$patID2
+
+SampleOverview <- read.csv("~/Documents/CLL/OtherData/2018-01-16_samples.csv")
+additionalSamples <- filter(SampleOverview, Patient.ID %in% extremeCases$patID2, screen_EMBLI==1|screen_EMBLII==1| screen_synergy==1| screen_CPS1000==1, screen_VP5C1==0, screen_IC50==0, screen_pilot67==0)
+```
+
+CPS1000: ONO-4059 is a drug targeting BTK which was not included in the previous screens..
+```{r}
+load("/Volumes/huber/projects/nct/cll/ProcessedData/DrugScreens/CPS1000/CPS1000_170801.RData")
+load("/Volumes/huber/projects/nct/cll/ProcessedData/IGHV/ighv_140423.RData")
+
+# only include patients that were considered for MOFA on the new drug
+pheno1000_sub <- filter(pheno1000, diagnosis=="CLL", patientID %in% df_clustering$patID2, Drug %in% c("ONO-4059", "PRT062607","Ibrutinib", "Imatinib",
+                                                                                                      "Dasatinib"))
+length(unique(pheno1000_sub$patientID))
+pheno1000_sub <- filter(pheno1000, diagnosis=="CLL", patientID %in% df_clustering$patID2, Drug %in% c("ONO-4059"))
+pheno1000_sub$patIDH <- encPatientID[pheno1000_sub$patientID,]$PatientID2
+pheno1000_sub$IGHV <- IGHV[pheno1000_sub$patIDH]
+pheno1000_sub$ZIGHV <- ZIGHV[pheno1000_sub$patIDH]
+pheno1000_sub$LF1 <- Z[pheno1000_sub$patIDH, idx_ighv]
+
+pheno1000_sub %<>% mutate(outlier=patientID %in% extremeCases$patID2)
+pheno1000_sub %<>% mutate(group=ifelse(outlier, patIDH, paste0(IGHV,"-CLL")))
+pheno1000_sub %<>% filter(IGHV!="missing")
+pheno1000_sub %<>% mutate(id=ifelse(outlier, patientID, paste0(IGHV,"-CLL")))
+
+# edge-corrected value
+ggplot(pheno1000_sub, aes(x=Concentration, y=normVal.adj.cor, col=IGHV, linetype=outlier, group=group, shape=id)) + stat_summary(fun.data = mean_se, fun.args = list(mult = 1) ) +stat_summary(fun.data = mean_se,geom="line", fun.args = list(mult = 1))  +facet_wrap(~Drug, scales = 'free_x')
+```
+
+
+Seahorse
+```{r}
+load("/Volumes/huber/projects/nct/cll/ProcessedData/Metabolism/Seahorse_20170822.RData")
+sea_sub <- sea[,colData(sea)$patientID  %in% df_clustering$patID2]
+sea_assay  <- assay(sea_sub)
+colnames(sea_assay) <- colData(sea_sub)$patientID
+sea_assay <- as.data.frame(t(sea_assay))
+sea_assay$patientID <- rownames(sea_assay)
+sea_assay$patIDH <- encPatientID[sea_assay$patientID,]$PatientID2
+sea_assay$IGHV <- IGHV[sea_assay$patIDH]
+sea_assay$ZIGHV <- ZIGHV[sea_assay$patIDH]
+
+sea_assay %<>% mutate(outlier=patientID %in% extremeCases$patID2)
+sea_assay %<>% mutate(group=ifelse(outlier, patIDH, paste0(IGHV,"-CLL")))
+sea_assay %<>% filter(IGHV!="missing")
+sea_assay %<>% mutate(id=ifelse(outlier, patientID, paste0(IGHV,"-CLL")))
+
+ggplot(sea_assay, aes(x=group, y=basal.respiration, col=IGHV, group=group, shape=id)) + geom_boxplot()
+```
+

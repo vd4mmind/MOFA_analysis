@@ -1,0 +1,88 @@
+---
+title: "MOFA - CLL classification by IGHV status"
+author: "Britta Velten"
+date: "10/08/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+library(beeswarm)
+# library(pace)
+knitr::opts_chunk$set(fig.path = "figures_LF34/", dev = c('png','pdf'))
+```
+
+# Get imported model and related data
+Prepared in CLL_import_technical.Rmd
+```{r}
+load("out_import_technical_flipped.RData")
+model@ModelOpts$learnIntercept <- TRUE # for compatibility 
+
+
+# idx for IGHV latent factor
+idx_ighv <- "1"
+
+# helper function for some plots
+source("plottingUtils.R")
+```
+
+```{r}
+r2 <- calculateVarianceExplained(model)
+
+r2df <- melt(r2$R2PerFactor[c(3,4),], varnames = c("Factor", "Omic"))
+r2df$Factor <- as.factor(r2df$Factor )
+gg<- ggplot(r2df, aes(x=Omic, y=value, group=Factor, fill=Factor)) +geom_bar(stat="identity", position = "dodge") +ylab("R2")+ scale_fill_manual(values=c("3"="darkgreen", "4"="navy")) +xlab("")
+print(gg)
+```
+
+
+```{r}
+plotTopWeights(model, "mRNA", "4", 20)
+plotTopWeights(model, "mRNA", "3", 20)
+plotTopWeights(model, "Drugs", '3', 10)
+
+load("~/Documents/cll/var/encPatientID_160218.RData")
+rownames(encPatientID) <- encPatientID$PatientID
+load("/Users/bvelten/Documents/CLL/var/patmeta_150609.RData")
+rownames(patmeta) <- encPatientID[rownames(patmeta),]$PatientID2
+patmeta$`RNA prep`[ patmeta$`RNA prep`=="CD19 +"] <- "CD19+"
+plotFactorScatter(model, c("3", "4"), color_by = patmeta[rownames(Z),]$`RNA prep`)
+plotFactorBeeswarm(model, "3", color_by = patmeta[rownames(Z),]$`RNA prep`)
+plotFactorBeeswarm(model, "4", color_by = patmeta[rownames(Z),]$`RNA prep`)
+
+plotFactorScatter(model, c("3", "4"), color_by = "CD8A")
+plotFactorScatter(model, c("3", "4"), color_by = "CD8B")
+df <- data.frame(CD8A =  model@TrainData$mRNA["CD8A",],
+                 CD8B =  model@TrainData$mRNA["CD8B",],
+                 CD3D =  model@TrainData$mRNA["CD3D",],
+                 CD300E = model@TrainData$mRNA["CD300E",],
+                 LF3 = Z[,"3"],
+                 LF4= Z[,"4"])
+corrplot::corrplot(cor(df, use="complete.obs"))
+ggplot(df, aes(x= CD8A, y= LF4)) +geom_point()
+ggplot(df, aes(x= CD8B, y= LF4)) +geom_point()
+ggplot(df, aes(x= CD300E, y= LF4)) +geom_point()
+
+```
+ CD300E: Macrophages/Monocytes, NK cells
+CD8, Cd3D: Tcell
+ 
+ 
+```{r}
+cibersort <- read.csv('/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/biology/outputs/CIBERSORT.Output.csv', row.names = 1)
+# only available for patients with mRNA data
+commonPat <- intersect(rownames(Z), rownames(cibersort) )
+corrplot::corrplot(cor(cibersort[commonPat,],Z[commonPat,-1], use="complete.obs"))
+```

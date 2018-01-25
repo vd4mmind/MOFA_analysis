@@ -1,0 +1,193 @@
+---
+title: "Explore factors 8 and 7"
+author: "Britta Velten"
+date: "11/8/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+setwd("/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/")
+devtools::load_all("/Users/bvelten/Documents/MOFA/MOFApackage/scGFA/MOFAtools/")
+# library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+# library(pace)
+```
+
+```{r}
+knitr::opts_chunk$set(fig.height = 10)
+```
+
+# Get imported model and related data
+Prepared in CLL_import_technical.Rmd
+```{r}
+load("../code4manuscript/out_import_technical_flipped.RData")
+model@ModelOpts$learnIntercept <- TRUE
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/exploratory/figures"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+```
+
+# Which factor is active where?
+```{r}
+r2 <- calculateVarianceExplained(model)
+pdf(file.path(plotdir,"Factor78_R2.pdf"))
+r2df <- melt(r2$R2PerFactor[c(7,8),], varnames = c("Factor", "Omic"))
+r2df$Factor <- as.factor(r2df$Factor )
+gg<- ggplot(r2df, aes(x=Omic, y=value, group=Factor, fill=Factor)) +geom_bar(stat="identity", position = "dodge") +ylab("R2")+ scale_fill_manual(values=c("7"="darkgreen", "8"="navy")) +xlab("")
+print(gg)
+dev.off()
+```
+
+# Association to pretreatment
+```{r}
+pdf(file.path(plotdir,"Scatterplot_pretreatment.pdf"))
+FactorsScatterPlot(model, c("7","8"), color_by = covariates$IC50beforeTreatment)
+dev.off()
+```
+
+```{r}
+pdf(file.path(plotdir,"Factor78_pretreatment.pdf"))
+df <- data.frame(pretreated=covariates$IC50beforeTreatment, Factor7= getFactors(model, factors="7"),Factor7= getFactors(model, factors="8"))
+
+df <- filter(df, !is.na(pretreated))
+colnames(df) <- c("pretreated", "Factor 7", "Factor 8")
+df <- melt(df, variable.name = "factor")
+
+gg <- ggplot(df, aes(x=pretreated, y=value, fill= pretreated)) + geom_violin() +facet_wrap(~factor) + scale_fill_manual(values=c("FALSE"="cornflowerblue", "TRUE"="orange4")) +geom_jitter(alpha=0.5, width=0.05) + ylab("Factor value") 
+print(gg)
+
+t.test(value~pretreated, filter(df, factor=="Factor 7") )
+t.test(value~pretreated, filter(df, factor=="Factor 8") )
+dev.off()
+```
+
+
+# Acitvity in Drug view
+```{r}
+pdf(file.path(plotdir,"drugs_7.pdf"))
+plotTopWeights(model, "Drugs", "7", nfeatures = 15)
+dev.off()
+
+pdf(file.path(plotdir,"drugs_8.pdf"))
+plotTopWeights(model, "Drugs", "8", nfeatures = 15)
+dev.off()
+```
+Both factors have high eights on rotenone.
+
+# Activity in Mutation View
+```{r}
+pdf(file.path(plotdir,"mut_7.pdf"))
+plotTopWeights(model, "Mutations", "7", nfeatures = 5)
+dev.off()
+```
+
+# Activity in mRNA View
+```{r}
+pdf(file.path(plotdir,"mRNA_7.pdf"))
+plotTopWeights(model, "mRNA", "7", nfeatures = 10)
+dev.off()
+
+pdf(file.path(plotdir,"mRNA_8.pdf"))
+plotTopWeights(model, "mRNA", "8", nfeatures = 10)
+dev.off()
+```
+
+## Reactome Gene Set
+Get gene set annotations
+```{r}
+# Get reactome gene sets
+reactomceGS<-readRDS("~/Documents/MOFA/CLL_MOFA_data/GO/reactome/human_reactome_binary_matrix.rds")
+reactomceGSList <- apply(reactomceGS, 1,  function(c) colnames(reactomceGS)[c==1])
+
+#Get describtion of pathways
+ReactomePathwayInfo<-readLines("~/Documents/MOFA/CLL_MOFA_data/GO/reactome/ReactomePathwaysMeta.txt")
+ReactomePathwayInfo<-do.call(rbind,strsplit(ReactomePathwayInfo, "\t"))
+colnames(ReactomePathwayInfo)<-c("id", "description", "species")
+ReactomePathwayInfo<-as.data.frame(ReactomePathwayInfo)
+ReactomePathwayInfo<-ReactomePathwayInfo[ReactomePathwayInfo$species=="Homo sapiens",]
+rownames(reactomceGS) <- ReactomePathwayInfo$description[match(rownames(reactomceGS), ReactomePathwayInfo$id)]
+```
+
+```{r}
+pdf("mRNA_loadings_7.pdf")
+# use ensIDs
+if(!all(grepl("ENS", featureNames(model)$mRNA))) 
+  MOFAtools::featureNames(model)$mRNA <- mRNA$ens_id[match(MOFAtools::featureNames(model)$mRNA, mRNA$symbol)]
+
+gsea.outParam_nonadj <- FeatureSetEnrichmentAnalysis(model, "mRNA", reactomceGS, statistical.test = "parametric", alpha = 0.2, min.size = 15, factors = c("7","8"))
+Heatmap_FeatureSetEnrichmentAnalysis(gsea.outParam_nonadj, threshold=0.2)
+
+pdf(file.path(plotdir,"mRNAenr_8.pdf"))
+LinePlot_FeatureSetEnrichmentAnalysis(gsea.outParam_nonadj, factor = "8", threshold=0.2)
+dev.off()
+```
+
+
+```{r}
+knitr::opts_chunk$set(eval=FALSE)
+```
+
+But no strong association
+```{r}
+scatterPlot(model, c("8", "7"),
+            color_by = as.factor(covariates$del17p13))
+df <- as.data.frame(cbind(Z=Z, covariates, rotenone = colMeans(model@TrainData$Drugs[grepl("rotenone", rownames(model@TrainData$Drugs)),])))
+df <- filter(df, !is.na(TP53) & !is.na(IGHV) & !is.na(IC50beforeTreatment))
+gg1 <- ggplot(df, aes(y=Z.7, x=IC50beforeTreatment, group=IC50beforeTreatment)) +geom_boxplot() +facet_wrap(paste("TP53", TP53) ~ paste("IGHV", IGHV)) +geom_point()
+gg2 <- ggplot(df, aes(y=rotenone, x=IC50beforeTreatment, group=IC50beforeTreatment)) +geom_boxplot() +facet_wrap(paste("TP53", TP53) ~ paste("IGHV", IGHV)) +geom_point()
+gg3 <- ggplot(df, aes(y=Z.8, x=IC50beforeTreatment, group=IC50beforeTreatment)) +geom_boxplot() +facet_wrap(paste("TP53", TP53) ~ paste("IGHV", IGHV))
+grid.arrange(gg1,gg2, ncol=2)
+
+scatterPlot(model, c("8", "7"),
+            color_by = as.factor(covariates$IC50beforeTreatment))
+```
+
+#Test for association to covariates
+All facotrs significantly associated to survival are also associated to IC50BeforeTreatment!
+```{r}
+# calculate significance in a linear model and correct for multiple testing per latent factor
+pvals_Covariates_LF<-  sapply(colnames(Z)[-1], function(lfidx){
+    pvalPerLF<-sapply(colnames(covariates), function(mutName){
+      s <- summary(lm(Z[,lfidx] ~ covariates[,mutName]))
+      s
+      f<-s$fstatistic
+      p <- pf(f[1],f[2],f[3],lower.tail=F)
+      as.numeric(p)
+  })
+  })
+pvalsadj_Covariates_LF <- matrix(p.adjust(pvals_Covariates_LF, method="BH"), nrow= nrow(pvals_Covariates_LF))
+colnames(pvalsadj_Covariates_LF) <- colnames(pvals_Covariates_LF)
+rownames(pvalsadj_Covariates_LF) <- rownames(pvals_Covariates_LF)
+
+
+fdr <- 0.01
+pvalDF <- melt(pvalsadj_Covariates_LF, varnames = c("covariate", "LF"), value.name = "p.adj")
+pvalDF$LF <- as.factor(pvalDF$LF)
+pvalDF$neg.log.p.adj <- -log(pvalDF$p.adj )
+pvalDF$imp <- pvalDF$neg.log.p.adj > -log(fdr)
+pvalDF$covariate <- ifelse(pvalDF$imp, as.character(pvalDF$covariate), "other")
+
+cols <- c(RColorBrewer::brewer.pal(8,"Dark2"), RColorBrewer::brewer.pal(9,"Set1")) [1:length(unique(pvalDF$covariate))]
+names(cols) <- unique(pvalDF$covariate)
+cols["other"] <-"gray"
+
+ggplot(pvalDF, aes(x= LF, y=neg.log.p.adj,col=covariate))+geom_point() + 
+  geom_hline(yintercept = -log(fdr), linetype="dotted", col="red") + 
+    ggrepel::geom_text_repel(data = filter(pvalDF, imp), aes(label = covariate, col = covariate), segment.alpha=0.2,
+                             min.segment.length = unit(0.5, "lines"), nudge_x=0.5,  nudge_y = 20, show.legend=F) +
+  coord_flip() + ylab("Neg. log p-value (adjusted)") + xlab("Latent Factor") +
+  theme_bw() +geom_text(aes(y= -log(fdr), hjust=-0.1, x=ncol(Z)-1, label=paste("FDR", fdr*100,"%")), col="red") +
+  scale_color_manual(values=cols) 
+```
+

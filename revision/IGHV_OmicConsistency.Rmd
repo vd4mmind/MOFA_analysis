@@ -1,0 +1,134 @@
+---
+title: "Show consistency of molecula data and IGHV status except outliers"
+author: "Britta Velten"
+date: "19/01/2018"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+library(beeswarm)
+```
+
+#Load model used for paper
+```{r}
+load("out_import_technical_flipped.RData")
+
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/Figures_IGHV_omicconsistency"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+
+# idx for IGHV latent factor
+idx_ighv <- "1"
+
+# helper function for some plots
+source("plottingUtils.R")
+
+options(stringsAsFactors = FALSE)
+```
+
+# Get MC, IGHV and MOFA's classifications
+```{r}
+# methylation cluster
+MC <- covariates[, "MethylationCluster"]
+MC[is.na(MC)] <- "missing"
+names(MC) <- rownames(covariates)
+
+# IGHV status
+IGHV <- covariates[,"IGHV"]
+IGHV[is.na(IGHV)] <- "missing"
+names(IGHV) <- rownames(covariates)
+
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
+ZMC <- ZMC$cluster
+# ZMC 
+# table(paste(ZMC,MC))
+# ZMC <- ifelse(ZMC==1, "HP", ifelse(ZMC==2, "LP", "IP"))
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+table(MC, ZMC)
+
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZIGHV <- kmeans(Z[,idx_ighv], 2, nstart=1000, iter.max = 1000)
+ZIGHV <- ZIGHV$cluster
+# ZIGHV 
+
+# label clusters as U and M-CLL
+IGHV[IGHV==0] <- "U"
+IGHV[IGHV==1] <- "M"
+ZIGHV[ZIGHV==1]<-"M"
+ZIGHV[ZIGHV==2]<-"U"
+
+# collect labels and factor values in data-frame
+df_clustering <- data.frame(IGHV = as.factor(IGHV), ZMC = ZMC, ZIGHV=ZIGHV,
+                            MC = as.factor(MC), patID = rownames(Z),
+                            LF1 = Z[,idx_ighv])
+
+#check agreement between clusters
+clagree <- paste(ZIGHV ,IGHV, sep="_")
+clagree <- ifelse(clagree %in% c("M_M", "U_U"), "agreement with label",
+                  ifelse(grepl("missing",clagree), "label missing",
+                         ifelse(clagree=="M_U", "U-CLL clustered as M-CLL", "M-CLL clustered as U-CLL" )))
+
+df_clustering$agreement <- clagree
+
+# match to P-Patient Id
+load("~/Documents/cll/var/encPatientID_160218.RData")
+df_clustering$patID2 <- encPatientID$PatientID[match(as.character(df_clustering$patID), encPatientID$PatientID2)]
+
+extremeCases <- filter(df_clustering,  MC %in% c("LP", "HP"), !agreement %in% c('agreement with label', 'label missing'))
+```
+
+Collect molecular markers for all patients
+```{r}
+IGHV_ttest <- IGHV
+IGHV_ttest[IGHV_ttest=="missing"] <- NA
+pvals <- apply(model@TrainData$Drugs,1, function(d) t.test(d~ IGHV_ttest)$p.value)
+names(pvals)[p.adjust(pvals, method='BH') < 0.01]
+
+df_clustering$ZAP70_expression <- model@TrainData$mRNA["ZAP70", df_clustering$patID]
+for(i in 1:5) {
+  df_clustering[,paste0("ibrutinib_",i)] = model@TrainData$Drugs[paste0("ibrutinib_",i), df_clustering$patID]
+  df_clustering[,paste0("dasatinib_",i)] = model@TrainData$Drugs[paste0("dasatinib_",i), df_clustering$patID]
+}
+
+#extended patmeta
+load("~/Documents/cll/var/patmeta_150609.RData")
+    
+
+# methylation markers?
+ighv_markers <- read.csv("~/Documents/CLL/OtherData/2014-04-11_ighv_markers.csv")
+ighv_markers %<>% filter(sample != "")
+rownames(ighv_markers) <- ighv_markers$sample
+df_clustering <- cbind(df_clustering,
+                       ighv_markers[df_clustering$patID2,colnames(ighv_markers)!="sample"],
+                         patmeta[df_clustering$patID2, c('IGHV Uppsala % SHM',  'IGHV clinical gene usage', 'IGHV clinical % SHM')])
+df_clustering %<>% mutate(outlier=patID2 %in% extremeCases$patID2)
+df_clustering %<>% mutate(group=ifelse(outlier, patID, paste0(IGHV,"-CLL")))
+df_clustering %<>% filter(IGHV!="missing")
+df_clustering %<>% mutate(id=ifelse(outlier, patID2, paste0(IGHV,"-CLL")))
+```
+
+```{r}
+# boxplot for diffferent markers
+df_melted <- melt(df_clustering, measure.vars= c("LF1", "ZAP70_expression",
+                                                 paste0("ibrutinib_",1:5),
+                                                 paste0("dasatinib_",1:5), "ZAP_CpG7.12",
+                                                 "TNF", "TCF3", "EBF1",
+                                                 'IGHV Uppsala % SHM', 'IGHV clinical % SHM'))
+ggplot(df_melted, aes(y=value,x=id, col=IGHV, group=group, shape=id))  + geom_boxplot() + facet_wrap(~variable, scales="free_y") + theme(axis.text.x = element_text(angle=60, hjust=1, vjust=1))
+```
+
