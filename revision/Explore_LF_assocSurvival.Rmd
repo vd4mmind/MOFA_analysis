@@ -218,6 +218,7 @@ source("~/Documents/Interactome_DKFZ/analysis/helper.R")
 # try hallmark gene sets
 HallmarkmSigDB<-getGmt("~/Documents/Interactome_DKFZ/h.all.v5.1.symbols.gmt")
 toTest<-names(HallmarkmSigDB)
+
 UpGenes<-tolower(upreg$symbol)
 df <- data.frame( significant= 1*(rownames(res) %in% rownames(upreg)),
                       means=res$baseMean )
@@ -231,10 +232,7 @@ df <- data.frame( significant= 1*(rownames(res) %in% rownames(upreg)),
 x.up<-datatable(table.out, 
                  caption = "Hallmark genes sets enriched in at a FDR < 10% caption upregulated genes")
 #nonoe
-
-HallmarkmSigDB<-getGmt("~/Documents/Interactome_DKFZ/h.all.v5.1.symbols.gmt")
-toTest<-names(HallmarkmSigDB)
-UpGenes<-tolower(downreg$symbol)
+DownGenes<-tolower(downreg$symbol)
 df <- data.frame( significant= 1*(rownames(res) %in% rownames(downreg)),
                       means=res$baseMean )
 mm <- matchit( significant ~ means,
@@ -242,9 +240,9 @@ mm <- matchit( significant ~ means,
                    distance="mahalanobis" )
 b <- as.numeric(mm$match.matrix[,1])
 background<-tolower(res$symbol[b])
-test.result<-testForGSE( toTest, UpGenes, background)
+test.result<-testForGSE( toTest, DownGenes, background)
 table.out<-as.data.frame(test.result)
 x.down <-datatable(table.out, 
-                 caption = "Hallmark genes sets enriched in at a FDR < 10% caption upregulated genes")
+                 caption = "Hallmark genes sets enriched in at a FDR < 10% caption downregulated genes")
 ```
 
