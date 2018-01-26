@@ -125,10 +125,13 @@ df_clustering %<>% mutate(id=ifelse(outlier, patID2, paste0(IGHV,"-CLL")))
 ```{r}
 # boxplot for diffferent markers
 df_melted <- melt(df_clustering, measure.vars= c("LF1", "ZAP70_expression",
-                                                 paste0("ibrutinib_",1:5),
-                                                 paste0("dasatinib_",1:5), "ZAP_CpG7.12",
-                                                 "TNF", "TCF3", "EBF1",
-                                                 'IGHV Uppsala % SHM', 'IGHV clinical % SHM'))
-ggplot(df_melted, aes(y=value,x=id, col=IGHV, group=group, shape=id))  + geom_boxplot() + facet_wrap(~variable, scales="free_y") + theme(axis.text.x = element_text(angle=60, hjust=1, vjust=1))
+                                                 # paste0("ibrutinib_",1:5),
+                                                 # paste0("dasatinib_",1:5),
+                                                 "ZAP_CpG7.12",
+                                                 "TNF", "TCF3", "EBF1"
+                                                 # 'IGHV Uppsala % SHM', 'IGHV clinical % SHM'
+                                                 ))
+ggplot(df_melted, aes(y=value,x=id, col=IGHV, group=group))  + geom_boxplot() +
+  facet_wrap(~variable, scales="free_y") + theme(axis.text.x = element_text(angle=90, hjust=1, vjust=1))
 ```
 

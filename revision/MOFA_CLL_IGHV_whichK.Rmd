@@ -22,8 +22,8 @@ library(magrittr)
 library(Hmisc)
 library(cowplot)
 library(beeswarm)
-# library(pace)
-knitr::opts_chunk$set(dev=c('png', 'pdf'), fig.path = 'IGHV_whichK')
+library(ggpubr)
+knitr::opts_chunk$set(dev=c('png', 'pdf'), fig.path = 'IGHV_whichK/')
 ```
 
 # Get imported model and related data
@@ -51,7 +51,6 @@ ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
 ZMC <- ZMC$cluster
 ZMC 
 ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
-
 ```
 
 
@@ -61,21 +60,11 @@ library(ClusterR)
 Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="BIC")
 ```
 
-```{r}
-# Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="AIC")
-# Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="variance_explained")
-# Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="Adjusted_Rsquared")
-# Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="dissimilarity")
-# Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="WCSSE")
-```
-
-
 # Test difference in gene expression and drug response
 
 ## Gene expression
 Comparison LZ to IZ: all 20 genes significant, comparison IZ to HZ 10/20 have p-value < 0.05.
-```{r}
-library(ggpubr)
+```{r Figure3supp_geneexpression, fig.width=10, fig.height=7}
 weigths1 <- getWeights(model, "mRNA", idx_ighv)[[1]]
 topGenes <- rownames(weigths1)[order(abs(weigths1), decreasing = T)][1:20]
 cols <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
@@ -83,26 +72,15 @@ cols <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
 # test and plot
 data <- melt(t(model@TrainData$mRNA[topGenes, ]), varnames = c("patient", "gene"))
 data$cluster <- ZMC[data$patient]
-pdf("~/Figure3supp_geneexpression.pdf", width=10, height=7)
 gg <- ggplot(data, aes(x=cluster, y=value, group=cluster, fill=cluster)) +geom_boxplot()  +
     scale_fill_manual(values=cols) + ylab("Normalized expression")  + 
     stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test", label="p.signif", hide.ns=T) +
   facet_wrap(~gene, nrow =4, strip.position="top") + theme(panel.spacing = unit(2, "lines")) + ylim(c(0,20))
 gg
-dev.off()
-
-# glist <- lapply(topGenes, function(gene){
-#   df <- data.frame(value=model@TrainData$mRNA[gene,], cluster=ZMC)
-#   gg <- ggplot(df, aes(x=cluster, y=value, group=cluster, fill=cluster)) +geom_boxplot()  +
-#     scale_fill_manual(values=cols) + xlab("Normalized expression") +ggtitle(gene) + 
-#     stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test")
-# })
-# Reducepvals_ge
-# names(which(pvals_ge<0.05))
 ```
 
 ## Drug responses
-```{r}
+```{r Figure3supp_drugs, fig.width=10}
 weigths1 <- getWeights(model, "Drugs", idx_ighv)[[1]]
 # topDrugs <- rownames(weigths1)[order(abs(weigths1), decreasing = T)][1:20]
 topDrugs <- rownames(weigths1)[grepl("dasatinib|AZD7762",rownames(weigths1))]
@@ -121,31 +99,18 @@ data$conc <- sapply(1:nrow(data), function(r) {
   paste(conctab[dd$drugid,paste0("c",dd$concid)])
 })
 
-pdf("dasatinib_siginif.pdf")
-ggplot(filter(data, drugnm=="dasatinib"), aes(x=cluster, group=cluster, y=value, fill=cluster)) + 
+
+gg_dasatinib <- ggplot(filter(data, drugnm=="dasatinib"), aes(x=cluster, group=cluster, y=value, fill=cluster)) + 
   geom_boxplot()+  scale_fill_manual(values=cols) +
-  stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test") +facet_wrap(~conc)+
+  stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test", label="p.signif", hide.ns=T) +facet_wrap(~conc)+
   ylim(c(0,1.5)) + ylab("Viability [%]") + ggtitle("dasatinib")
-dev.off()
 
-pdf("AZD7762_siginif.pdf")
-ggplot(filter(data, drugnm=="AZD7762"), aes(x=cluster, group=cluster, y=value, fill=cluster)) + 
+
+gg_AZD7762 <-  ggplot(filter(data, drugnm=="AZD7762"), aes(x=cluster, group=cluster, y=value, fill=cluster)) + 
   geom_boxplot()+  scale_fill_manual(values=cols) +
-  stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test") +facet_wrap(~conc)+
+  stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test", label="p.signif", hide.ns=T) +facet_wrap(~conc)+
   ylim(c(0,1.5)) + ylab("Viability [%]") + ggtitle("AZD7762")
-dev.off()
 
-# test HZ vs IZ
-pvals_dr <- sapply(topDrugs, function(drug){
-  df <- data.frame(value=model@TrainData$Drugs[drug,], cluster=ZMC)
-  gg <- ggplot(df, aes(x=cluster, y=value, group=cluster)) +geom_boxplot()
-  # print(gg)
-  ttout <- t.test(model@TrainData$Drugs[drug,ZMC=="HZ"],model@TrainData$Drugs[drug,ZMC=="IZ"])
-  pval <- ttout$p.value
-})
-pvals_dr
-sum(pvals_dr < 0.05)
-hist(pvals_dr)
-sum(p.adjust(pvals_dr, method="BH") < 0.1)
+plot_grid(gg_dasatinib, gg_AZD7762, labels = c("a","b"))
 ```
 
