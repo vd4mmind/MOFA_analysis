@@ -1,21 +1,41 @@
 MultiOmics Factor Analysis disentangles heterogeneity in blood cancer
 =========
 
-Source code of the manuscript ***MultiOmics Factor Analysis disentangles heterogeneity in blood cancer*** ([bioRxiv](XX)).
+Source code of the manuscript ***MultiOmics Factor Analysis disentangles heterogeneity in blood cancer*** ([bioRxiv](https://www.biorxiv.org/content/early/2017/11/10/217554)).
 
 Abstract
 --------
-Multi-omics technologies allow biological systems to be probed across molecular layers using transcriptomics, epigenetics, proteomics and perturbation assays. However, there is a lack of generalizable methods for integrating these data modalities. Here, we present MultiOmics Factor Analysis (MOFA), an unsupervised approach that can discover the driving sources of variation in multi-omics data. Our model jointly infers (hidden) factors that capture both biological and technical sources of variability across data modalities. We applied MOFA to data derived from 200 patients with chronic lymphocytic leukemia (CLL), where somatic mutations, RNA expression, DNA methylation and ex-vivo drug response profiles were measured. MOFA automatically identified previously known sources of disease heterogeneity, including immunoglobulin heavy chain variable region (IGHV) status and trisomy of chromosome 12, as well as previously underappreciated drivers of variation, such as oxidative stress and reactive oxygen species. Finally, we demonstrate that the MOFA factors enable missing values to be filled-in, the detection of mislabeled samples, and enhanced prediction accuracy of clinical outcomes.
+Multi-omic studies in large cohorts promise to characterize biological processes across molecular layers including genome, transcriptome, epigenome, proteome and perturbation phenotypes. However, methods for integrating multi-omic datasets are lacking. We present Multi-Omics Factor Analysis (MOFA), an unsupervised dimensionality reduction method for discovering the driving sources of variation in multi-omics data. Our model infers a set of (hidden) factors that capture biological and technical sources of variability across data modalities. We applied MOFA to data from 200 patient samples of chronic lymphocytic leukemia (CLL) profiled for somatic mutations, RNA expression, DNA methylation and ex-vivo responses to a panel of drugs. MOFA automatically discovered the known dimensions of disease heterogeneity, including immunoglobulin heavy chain variable region (IGHV) status and trisomy of chromosome 12, as well as previously underappreciated drivers of variation, such as response to oxidative stress. These factors capture key dimensions of patient heterogeneity, including those linked to clinical outcomes. Finally, MOFA handles missing data modalities in subsets of samples, enabling imputation, and the model can identify outlier samples.
 
 
 Content
 -------
-* `/IGHV_factor/`: characterisation of Factor 1 (IGHV-associated factor)
-* `/OverviewFigure/`: plots for the vverview of the data
+* `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data. In the 
+    1) import_models.Rmd [html](CLL_Analysis/import_models.html)
+        * imports .hdf5 model files produced by mofa in Python
+        * tests robustness across initializations, picks a model based on ELBO for further analysis and checks the factors' correlation
+        * saves relevant model and relevant data from the original study (Dietrich, Oles, Lu et al 2017) to "out_import.RData" used for the other scripts
+
+    2) data_overview.Rmd [html](CLL_Analysis/data_overview.html)
+        * generates the overview tile plot on data in the CLL data set used as input data for MOFA (part of Fig. 2)
+
+    3) MOFAfactors_overview.Rmd  [html](CLL_Analysis/MOFAfactors_overview.html)
+        * Code for Figure 2 (Factor overview)
+
+    4) Analysis_Factor1.Rmd  [html](CLL_Analysis/Analysis_Factor1.html)
+        * Code to charatcerize Factor 1 (Figure 3)
+    
+    5) IGHVstatus.Rmd  [html](CLL_Analysis/IGHVstatus.html)
+        * Code to compare IGHV groups with 2 groups based on Factor 1
+    
+    6) survival.Rmd  [html](CLL_Analysis/CLL_Analysis/survival.html)
+        * Code for Figure 4 and S14 (survival prediction)
+
+
 * `/continuity/`: characterisation of the continous IGHV phenotype
 * `/downsampling/`: downsampling analysis
 * `/iCluster/`: comparison with iCluster
-* `/imputation/`: imputation of drug response
+* `/imputation/`: assessment of imputation (on the drug response data of the CLL study)
 * `/pretreatment_factor/`: characterisation of Factor 7 (associated to preatreatment)
 * `/robustness/`: analysis of the robustness of the mode
 * `/run_mofa/`: template scripts to run MOFA
@@ -23,10 +43,10 @@ Content
 * `/simulations/`: assessment of technical capabilities of MOFA on simulated data
 * `/sparsity/`: assessment of sparsity priors
 * `/stress_factor/`: characterisation of Factor 5 (associated to oxidative stress response)
-* `/survival/`: survival analysis 
 
 Data
 -------
+ The data directory contains annotations used from ENSEMLBE for the gene expression data as well as the fitted MOFA models used for the main analysis.
 
 Contact
 -------

@@ -1,0 +1,116 @@
+---
+title: "MOFA - Reviewer 1.3"
+author: "Britta Velten"
+date: "16/01/2018"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+"In the analysis of the chronic lymphocytic leukemia data, not much information is provided about the choice of K in the three-mean clustering of samples based on factor 1 (Figure 3A). Was there a formal test about the goodness-of-fit of a three- versus e.g. two-mean clustering? The IZ and HZ clusters do not show a large difference in gene expression values (Figure 3C) or Drug response (Figure 3E). ""
+ 
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+library(beeswarm)
+library(ggpubr)
+knitr::opts_chunk$set(dev=c('png', 'pdf'), fig.path = 'IGHV_whichK/')
+```
+
+# Get imported model and related data
+Prepared in CLL_import_technical.Rmd
+```{r}
+load("out_import_technical_flipped.RData")
+
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/IGHV_whichK"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+
+# idx for IGHV latent factor
+idx_ighv <- "1"
+
+# helper function for some plots
+source("plottingUtils.R")
+```
+
+
+```{r}
+beeswarm::beeswarm(Z[,idx_ighv])
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
+ZMC <- ZMC$cluster
+ZMC 
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+```
+
+
+# Test which K is optimal
+```{r bic}
+library(ClusterR)
+Optimal_Clusters_KMeans(Z[,idx_ighv, drop=F], 5, criterion="BIC")
+```
+
+# Test difference in gene expression and drug response
+
+## Gene expression
+Comparison LZ to IZ: all 20 genes significant, comparison IZ to HZ 10/20 have p-value < 0.05.
+```{r Figure3supp_geneexpression, fig.width=10, fig.height=7}
+weigths1 <- getWeights(model, "mRNA", idx_ighv)[[1]]
+topGenes <- rownames(weigths1)[order(abs(weigths1), decreasing = T)][1:20]
+cols <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
+
+# test and plot
+data <- melt(t(model@TrainData$mRNA[topGenes, ]), varnames = c("patient", "gene"))
+data$cluster <- ZMC[data$patient]
+gg <- ggplot(data, aes(x=cluster, y=value, group=cluster, fill=cluster)) +geom_boxplot()  +
+    scale_fill_manual(values=cols) + ylab("Normalized expression")  + 
+    stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test", label="p.signif", hide.ns=T) +
+  facet_wrap(~gene, nrow =4, strip.position="top") + theme(panel.spacing = unit(2, "lines")) + ylim(c(0,20))
+gg
+```
+
+## Drug responses
+```{r Figure3supp_drugs, fig.width=10}
+weigths1 <- getWeights(model, "Drugs", idx_ighv)[[1]]
+# topDrugs <- rownames(weigths1)[order(abs(weigths1), decreasing = T)][1:20]
+topDrugs <- rownames(weigths1)[grepl("dasatinib|AZD7762",rownames(weigths1))]
+
+data <- model@TrainData$Drugs[topDrugs,]
+data <- melt(data, varnames=c("drugconc","patient"))
+data %<>% mutate(drugnm = sub("_[1-5]","",drugconc),
+                 concid = substr(drugconc,nchar(as.character(drugconc)),nchar(as.character(drugconc))),
+                 cluster=ZMC[patient])
+data('conctab', package="pace")
+data('drugs', package="pace")
+data$drugid <- sapply(data$drugnm, function(dr) rownames(drugs[drugs$name==dr,, drop=F]))
+
+data$conc <- sapply(1:nrow(data), function(r) {
+  dd <- data[r,, drop=F]
+  paste(conctab[dd$drugid,paste0("c",dd$concid)])
+})
+
+
+gg_dasatinib <- ggplot(filter(data, drugnm=="dasatinib"), aes(x=cluster, group=cluster, y=value, fill=cluster)) + 
+  geom_boxplot()+  scale_fill_manual(values=cols) +
+  stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test", label="p.signif", hide.ns=T) +facet_wrap(~conc)+
+  ylim(c(0,1.5)) + ylab("Viability [%]") + ggtitle("dasatinib")
+
+
+gg_AZD7762 <-  ggplot(filter(data, drugnm=="AZD7762"), aes(x=cluster, group=cluster, y=value, fill=cluster)) + 
+  geom_boxplot()+  scale_fill_manual(values=cols) +
+  stat_compare_means(comparisons=list(c("HZ","IZ"), c("IZ", "LZ")), method="t.test", label="p.signif", hide.ns=T) +facet_wrap(~conc)+
+  ylim(c(0,1.5)) + ylab("Viability [%]") + ggtitle("AZD7762")
+
+plot_grid(gg_dasatinib, gg_AZD7762, labels = c("a","b"))
+```
+

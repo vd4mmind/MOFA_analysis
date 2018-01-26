@@ -1,0 +1,232 @@
+---
+title: "Overview of MOFA factors of the CLL data"
+author: "Britta Velten"
+date: "04/07/2017"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+# Introduction
+This script provides an overview of the factors inferred by MOFA on the CLL data set as shown in Figure 2 of the manuscript.  The analysis is based on the model and other objects defined in import_models.Rmd.
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(cowplot)
+options(stringsAsFactors = FALSE)
+```
+
+# Get imported model and related data
+"out_import.RData" prepared in import_models.Rmds
+```{r}
+#output path for plots and data
+plotdir <- "figures/MOFAfactors_overview"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+outdir <- "out"
+
+# load model selected in import_models.Rmd
+load(file.path(outdir,"out_import.RData"))
+
+source("plotting_utils.R")
+```
+
+# Variance explained per view and factor
+```{r, fig.width=12}
+r2out <- calculateVarianceExplained(model,plotit = FALSE)
+r2out
+
+p <- plotFlippedR2(r2.out)
+
+# pdf(file.path(plotdir, "R2_flipped.pdf"), width=12)
+print(p)
+# dev.off()
+```
+
+
+
+# Weights on Mutations view for the first two factors
+For small views: Direct inspection of weight is a good way to annotate factors, e.g. here for Mutations.
+```{r, fig.width = 4.4, fig.height=3}
+# Mutation weights on factor 1
+# pdf(file.path(plotdir,"MutWeights_1.pdf"), width = 4.4, height=3)
+showTopWeightsAndColor(model, "Mutations", "1" , nfeatures = 5,
+                       abs=T, Features2color = "IGHV",
+                      maxL = 1, scalePerView=T)
+# dev.off()
+
+# Mutation weights on factor 2
+# pdf(file.path(plotdir,"MutWeights_2.pdf"), width = 4.4, height=3)
+showTopWeightsAndColor(model, "Mutations", "2" , nfeatures = 5,
+                       abs=T, Features2color = "trisomy12",
+                       maxL = 1, scalePerView=T)
+# dev.off()
+```
+
+# Scatterplot of two most important facotrs - bicolor
+```{r, fig.width = 5.5, fig.height = 6}
+# collect data for plot
+df = data.frame(x = Z[, "1"], y = Z[,"2"], 
+                trisomy12 = covariates$trisomy12,
+                IGHV = covariates$IGHV)
+
+# nice names for tr 12
+df$trisomy12[is.na(df$trisomy12)] <- "missing" 
+df$trisomy12[df$trisomy12 == "0"] <- "wt" 
+df$trisomy12[df$trisomy12 == "1"] <- "tr12" 
+df$trisomy12 <- factor(df$trisomy12, levels=c("wt", "tr12", "missing"))
+
+# nice names for IGHV
+df$IGHV[is.na(df$IGHV)] <- "missing" 
+df$IGHV[df$IGHV == "0"] <- "U" 
+df$IGHV[df$IGHV == "1"] <- "M" 
+df$IGHV <- factor(df$IGHV, levels=c("U", "M", "missing"))
+
+# nice names for combi
+df$IGHV_tr12 <- paste(df$IGHV, df$trisomy12, sep="-CLL, ")
+df %<>% mutate(IGHV_tr12= ifelse(grepl("missing", IGHV_tr12), "missing",IGHV_tr12))
+
+# colors and shapes for plot
+Paircolorr <- c(RColorBrewer::brewer.pal(6, "Paired")[c(1:2,5:6)], "grey")
+Shapes4plot <- c(17,19,17,19, 3)
+names(Shapes4plot) <- names(Paircolorr) <- c("U-CLL, wt", "U-CLL, tr12", "M-CLL, wt", "M-CLL, tr12", "missing")
+df$IGHV_tr12 <- factor(df$IGHV_tr12, levels=names(Paircolorr))
+
+# make plot
+titlesize <- 15
+gg <-  ggplot(df, aes(x=x, y=y, col=IGHV_tr12,shape=IGHV_tr12)) +
+  geom_point(size=2.5)  +
+  theme(plot.margin = margin(20, 20, 10, 10), 
+        axis.text = element_text(size = rel(1), color = "black"),
+        axis.title = element_text(size = titlesize), 
+        axis.title.y = element_text(size = rel(1.1),
+                                        margin = margin(0, 10, 0, 0)), 
+        axis.title.x = element_text(size = rel(1.1),
+                                        margin = margin(10, 0, 0, 0)), 
+        axis.line = element_line(color = "black", size = 0.5), 
+        axis.ticks = element_line(color = "black", size = 0.5),
+        panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank(),
+        legend.key = element_rect(fill = "white"),
+        legend.text = element_text(size = titlesize),
+        legend.title = element_blank(),
+        legend.position = "top") +
+  scale_shape_manual(name = "Mutational status",
+                     labels= names(Shapes4plot),
+                     values=Shapes4plot) +
+  scale_color_manual(name = "Mutational status",
+                     labels= names(Paircolorr),
+                     values=Paircolorr) +
+  guides(colour = guide_legend(ncol=3),
+          shape = guide_legend(ncol=3)) +
+  xlab("Factor 1") + ylab("Factor 2") 
+
+# save to pdf
+# pdf(file.path(plotdir,"ScatterPlot_IGHV_tr12_bicolor.pdf"), width = 5.5, height = 6, useDingbats=F)
+print(gg)
+# dev.off()
+```
+
+# Enrichment Analysis
+## Reactome Gene Set
+Get gene set annotations
+```{r}
+# Get reactome gene sets
+data("reactomeGS", package="MOFAtools")
+```
+
+```{r}
+# use ensIDs instead of gene symbols
+if(!all(grepl("ENS", featureNames(model)$mRNA))) 
+  MOFAtools::featureNames(model)$mRNA <- mRNA$ens_id[match(MOFAtools::featureNames(model)$mRNA, mRNA$symbol)]
+```
+
+## Calculate Enrichment
+```{r}
+gsea.out <- FeatureSetEnrichmentAnalysis(model, "mRNA",reactomeGS,
+                                         statistical.test = "parametric",
+                                         alpha = 0.01, min.size = 15)
+names(gsea.out$sigPathways) <- colnames(Z)[-1]
+```
+
+
+## Inspect GSE results
+### Define broad categories manually
+```{r}
+#broader categories
+label_pathway <- function(x){
+  ifelse(grepl("[s|S]tress|HSF|[S|s]enescence|[T|t]elomer|Attenuation phase", x), "stress_aging",
+         ifelse(grepl("egulat|Polymerase", x) & grepl("RNA", x), "RNA_regulation",
+                ifelse(grepl("Immun|TCR|Interleukin|IL",x), "ImmuneResponse", "other")))
+}
+categories <- sapply(rownames(reactomeGS), label_pathway)
+
+# write categories to .csv files
+write.csv(file=file.path(outdir,"stress_aging.csv"),
+          names(categories[which(categories=="stress_aging")]))
+write.csv(file=file.path(outdir,"ImmuneResponse.csv"),
+          names(categories[which(categories=="ImmuneResponse")]))
+write.csv(file=file.path(outdir,"RNA_regulation.csv"),
+          names(categories[which(categories=="RNA_regulation")]))
+write.csv(file=file.path(outdir,"other.csv"),
+          names(categories[which(categories=="other")]))
+
+# color definition
+col4Pathways <- c("other"="gray",
+                  "cellular stress/senescence"="cyan",
+                  "RNA regulation"="navy",
+                  "Immune Response"="forestgreen")
+
+nicelabels <- c(other="other",
+                stress_aging="cellular stress/senescence",
+                ImmuneResponse="Immune Response",
+                RNA_regulation="RNA regulation" )
+```
+
+### Bar plot of enriched gene sets on each factor
+```{r, fig.width = 4, fig.height = 4.8}
+# collect results in dataframe
+pathwaysDF <- melt(gsea.out$sigPathways, value.name="pathway")
+colnames(pathwaysDF) <- c("pathway", "factor")
+pathwaysDF %<>% mutate(type=label_pathway(pathway))
+
+# summarize per factor
+pathwaysSummary <- pathwaysDF %>% dplyr::group_by(factor) %>%
+  dplyr::summarise(other = sum(type=="other"),
+                   stress_aging=sum(type=="stress_aging"),
+                   ImmuneResponse = sum(type == "ImmuneResponse"),
+                   RNA_regulation = sum(type=="RNA_regulation"))
+
+# add factors without enrichment
+df_none <- data.frame(factor = colnames(Z)[-1][!colnames(Z)[-1] %in% pathwaysSummary$factor],
+                      other = 0, stress_aging=0,
+                      ImmuneResponse=0, RNA_regulation=0)
+pathwaysSummary <- rbind(pathwaysSummary, df_none)
+pathwaysSummary %<>%  melt(id.vars = "factor", variable.name = "type", value.name = "count")
+pathwaysSummary$factor <- factor(pathwaysSummary$factor, levels = 1:10)
+pathwaysSummary %<>% mutate(type=as.character(nicelabels[type]))
+pathwaysSummary$type <- factor(pathwaysSummary$type, levels=rev(as.character(nicelabels)))
+
+# pdf(file.path(plotdir,"GeneSetsOverview_rot.pdf"), width = 4, height = 4.8)
+ggplot(pathwaysSummary, aes(x=factor, y=count, fill=type)) +
+  geom_bar(stat="identity") +
+  ylab("Enriched gene sets at FDR 1%") +
+  xlab("Factor") +
+  scale_fill_manual(values=col4Pathways) +
+  theme(legend.position = "top") +
+  guides(fill=guide_legend(title="",nrow=2))
+# dev.off()
+```
+
+# SessionInfo
+```{r}
+sessionInfo()
+```
+
