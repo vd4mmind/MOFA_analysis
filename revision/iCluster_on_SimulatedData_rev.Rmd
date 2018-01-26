@@ -22,7 +22,8 @@ library(gridExtra)
 in.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Simulations/data/"
 iClfit.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Simulations/iCluster_results/centered_results/"
 MOFAfit.folder <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Simulations/MOFA_results/"
-plotdir <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Simulations/Figures_iCluster/"
+plotdir <- "/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/iCluster/Simulations/Figures_iCluster_rev/"
+if(!dir.exists(plotdir)) dir.create(plotdir)
 ```
 
 # Load simulated data
@@ -121,83 +122,60 @@ calculateVarianceExplained4iClust <- function(iCl_fit, k=NULL, data, plotit=T, p
   ZiClust <- iClmodel$meanZ
   corrplot::corrplot(cor(ZiClust), title = "iCluster factors correlation")
   intercept <- iClmodel$alpha
+  names(intercept) <- names(Y)
   SW <- lapply(seq_along(weightsiClust), function(d) cbind(intercept=intercept[[d]], weightsiClust[[d]])) 
   names(SW) <- names(Y)
   Z <- cbind(intercept=1,ZiClust)
   colnames(Z) <- c("intercept", paste(1:ncol(ZiClust), "iClust", sep="_"))
   for (i in seq_along(SW)) colnames(SW[[i]]) <- c("intercept", paste(1:ncol(ZiClust), "iClust", sep="_"))
-
-  K <- ncol(Z)
-  views <-names(SW)
   factors <- colnames(Z)
-  
-  # Calculate predictions under the  iCluster model using all or a single factor
-  Ypred_m <- lapply(views, function(m) Z%*%t(SW[[m]])); names(Ypred_m) <- views
-  Ypred_mk <- lapply(views, function(m) {
-                      ltmp <- lapply(factors, function(k) Z[,k]%*%t(SW[[m]][,k]) )
-                      names(ltmp) <- factors
-                      ltmp
-                    })
-  names(Ypred_mk) <- views
 
-  # Calculate prediction under the null model (intercept only)
-    #by default the null model is using the intercept LF if present and not the actual mean
-    NullModel <- lapply(views, function(m)  Ypred_mk[[m]][[1]][1,] )
-    names(NullModel) <- views
-    resNullModel <- lapply(views, function(m) sweep(Y[[m]],2,NullModel[[m]],"-"))
-    partialresNull <- lapply(views, function(m) sweep(Ypred_m[[m]],2,NullModel[[m]],"-"))
-    names(resNullModel) <- views
-    names(partialresNull) <- views
-    
-  # Remove intercept factor if present
-  factorsNonconst <- factors[-1]
-    
-  # Calculate coefficient of determination
-    # per view
-    fvar_m <- sapply(views, function(m) 1 - sum((Y[[m]]-Ypred_m[[m]])**2, na.rm=T) / sum(resNullModel[[m]]**2, na.rm=T))
-     
-    # per view and feature
-    if (perFeature)
-      fvar_md <- lapply(views, function(m) 1 - colSums((Y[[m]]-Ypred_m[[m]])**2,na.rm=T) / colSums(resNullModel[[m]]**2,na.rm=T))
-    
-    # per factor and view
-     if (showtotalR2) {
-       fvar_mk <- sapply(views, function(m) sapply(factorsNonconst, function(k) 1 - sum((resNullModel[[m]]-Ypred_mk[[m]][[k]])**2, na.rm=T) / sum(resNullModel[[m]]**2, na.rm=T) ))
-     } else {
-       fvar_mk <- sapply(views, function(m) sapply(factorsNonconst, function(k) 1 - sum((partialresNull[[m]]-Ypred_mk[[m]][[k]])**2, na.rm=T) / sum(partialresNull[[m]]**2, na.rm=T) ))
-     }
-    
-    # per factor and view and feature
-    if (perFeature)
-      fvar_mdk <- lapply(views, function(m) lapply(factorsNonconst, function(k) 1 - colSums((resNullModel[[m]]-Ypred_mk[[m]][[k]])**2,na.rm=T) / colSums(resNullModel[[m]]**2,na.rm=T)))
-    
-    # Set names
-    names(fvar_m) <- views
-    if(perFeature){
-      names(fvar_md) <- views
-      names(fvar_mdk) <- views
-      for(i in names(fvar_md)) names(fvar_md[[i]]) <- colnames(Y[[i]])
-      for(i in names(fvar_mdk)) rownames(fvar_mdk[[i]]) <- colnames(Y[[i]])
-    }
-    colnames(fvar_mk) <- views
-    rownames(fvar_mk) <- factorsNonconst 
-    
-  # Store results
-    R2_list <- list(
-      R2Total = fvar_m,
-      R2PerFactor = fvar_mk)
-    if(perFeature){
-      R2_list$R2PerFactorAndFeature = fvar_mdk
-      R2_list$R2PerFeature = fvar_md
-    }
+  factors <- factors[factors!="intercept"]
   
-  return(R2_list)
- 
+  K <- length(factors)
+  views <-names(SW)
+  include_intercept <- TRUE
+  
+  ### copied from claculate variance explained mofa function
+  FeatureMean <- lapply(views, function(m) {
+        apply(Y[[m]], 2, mean, na.rm = T)
+    })
+    names(FeatureMean) <- views
+    resNullModel <- lapply(views, function(m) sweep(Y[[m]], 2, 
+        FeatureMean[[m]], "-"))
+    names(resNullModel) <- views
+    Z[is.na(Z)] <- 0
+    Ypred_m <- lapply(views, function(m) Z %*% t(SW[[m]]))
+    names(Ypred_m) <- views
+    Ypred_mk <- lapply(views, function(m) {
+        ltmp <- lapply(factors, function(k) Z[, k] %*% t(SW[[m]][, 
+            k]))
+        names(ltmp) <- factors
+        ltmp
+    })
+    names(Ypred_mk) <- views
+    if (include_intercept) {
+        Y <- lapply(views, function(m) sweep(Y[[m]], 2, intercept[[m]], 
+            "-"))
+        names(Y) <- views
+    }
+    fvar_m <- sapply(views, function(m) 1 - sum((Y[[m]] - Ypred_m[[m]])^2, 
+        na.rm = T)/sum(resNullModel[[m]]^2, na.rm = T))
+    fvar_mk <- matrix(sapply(views, function(m) sapply(factors, 
+        function(k) 1 - sum((Y[[m]] - Ypred_mk[[m]][[k]])^2, 
+            na.rm = T)/sum(resNullModel[[m]]^2, na.rm = T))), 
+        ncol = length(views), nrow = length(factors))
+    names(fvar_m) <- views
+    colnames(fvar_mk) <- views
+    rownames(fvar_mk) <- factors
+    R2_list <- list(R2Total = fvar_m, R2PerFactor = fvar_mk)
+    return(R2_list)
 }
 ```
 
 Function to plot R2:
 ```{r, echo=F}
+library(scales)
 plotR2 <- function(fvar_mk, title="") { 
   
       
@@ -213,7 +191,8 @@ plotR2 <- function(fvar_mk, title="") {
       hm <- ggplot(fvar_mk_df, aes(view,factor)) + 
         geom_tile(aes(fill=value), color="black") +
         guides(fill=guide_colorbar("R2")) +
-        scale_fill_gradientn(colors=c("gray97","darkblue"), guide="colorbar", limits=c(0,0.25)) +
+        scale_fill_gradientn(colors=c("violet","gray97","darkblue"), guide="colorbar", limits=c(-0.05,0.25),
+                             values  = rescale(c(-0.05, 0, 0.25))) +
         ylab("Latent factor") +
         theme(
           # plot.margin = margin(5,5,5,5),
