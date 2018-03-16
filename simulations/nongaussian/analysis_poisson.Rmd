@@ -108,6 +108,8 @@ dev.off()
 ```
 
 <!-- Compare reconstruction error -->
+
+TO-DO: REPLACE THIS BY THE NEW PREDICT FUNCTION
 ```{r}
 sigmoid <- function(x) 1/(1+exp(-x))
 
