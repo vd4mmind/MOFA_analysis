@@ -40,7 +40,7 @@ Content
     8) IGHVstatus.Rmd  [html](CLL_Analysis/Factor8.html)
         * Code to charatcerize Factor 8
     
-    9) survival.Rmd  [html](CLL_Analysis/CLL_Analysis/survival.html)
+    9) survival.Rmd  [html](CLL_Analysis/survival.html)
         * Code for Figure 4 and supplementary figres for survival prediction
 
 
