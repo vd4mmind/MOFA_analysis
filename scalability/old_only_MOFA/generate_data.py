@@ -3,16 +3,15 @@
 ###################
 
 from time import time
-import numpy as np
 import scipy as s
 import scipy.stats as stats
 import os
 
 # Import manually defined functions
-from mofa.core.simulate import Simulate
+from MOFA.core.simulate import Simulate
 
 
-def generate_data(outfile, M=3, N=100, K=10, D=1000):
+def generate_data(outfile, M=5, N=100, K=20, D=5000):
 
   # Sanity checks
   if not os.path.isdir(os.path.dirname(outfile)):
@@ -73,16 +72,6 @@ def generate_data(outfile, M=3, N=100, K=10, D=1000):
     elif lik == 'bernoulli':
       data["Y"][i] = Y_bernoulli[i]
 
-
-  # mask 5% of the data
-  p2Mask = 0.05
-  for i in range(M):
-      idxMask = np.zeros(N*D[i])
-      idxMask[:int(round(N*D[i]*p2Mask))] = 1
-      np.random.shuffle(idxMask)
-      idxMask = np.reshape(idxMask, [N, D[i]])
-      data["Y"][i] = data["Y"][i].mask(idxMask==1)
-
   # Save data
   for m in xrange(M):
     s.savetxt(outfile+"_"+str(m)+".txt", data["Y"][m], fmt='%.3e', delimiter=' ')
@@ -91,38 +80,33 @@ def generate_data(outfile, M=3, N=100, K=10, D=1000):
 
 
 if __name__ == "__main__":
+  outdir = '/Users/ricard/MOFA/MOFA/test/scalability/data'
 
-  outdir = '/g/huber/users/bvelten/tmp/MOFA/runtime/withNAs/data'
-  #outdir = '/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/simulations_runtime/withNAs/data'
-  K_vals = [ 5, 10, 15, 20, 25, 30, 35, 40, 45, 50 ]
+  K_vals = [ 5 10 15 20 25 30 35 40 45 50 55 60 65 70 75 80 85 90 95 100 ]
   # K_vals = s.linspace(5.0, 99.0, num=20, dtype=int)
-  print "Generating K..."
+  D_vals = [ 100 500 1000 1500 2000 2500 3000 3500 4000 4500 5000 5500 6000 6500 7000 7500 8000 8500 9000 9500 10000 ]
+  # D_vals = s.linspace(500.0, 10000.0, num=20, dtype=int)
+  N_vals = [ 25 50 75 100 125 150 175 200 225 250 275 300 325 350 375 400 425 450 475 500 ]
+  # N_vals = s.linspace(100.0, 2000.0, num=20, dtype=int)
+  M_vals = [ 1 3 5 7 10 12 15 17 20 22 25 27 30 ]
+  # M_vals = s.linspace(2.0, 20.0, num=20, dtype=int)
+
   for k in K_vals:
+    print "Generating K..."
     outprefix = "%s/K/%d" % (outdir, k)
     generate_data(outprefix, K=k)
 
-
-  D_vals = [ 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000 ]
-  # D_vals = [ 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000 ]
-  # D_vals = s.linspace(500.0, 10000.0, num=20, dtype=int)
-  print "Generating D..."
   for d in D_vals:
+    print "Generating D..."
     outprefix = "%s/D/%d" % (outdir, d)
     generate_data(outprefix, D=d)
 
-
-  M_vals = [ 1, 3, 5, 7, 9, 11, 13, 15 ]
-  # M_vals = s.linspace(2.0, 20.0, num=20, dtype=int)
-  print "Generating M..."
   for m in M_vals:
+    print "Generating M..."
     outprefix = "%s/M/%d" % (outdir, m)
     generate_data(outprefix, M=m)
 
-
-  N_vals = [ 50, 100, 150, 200, 250, 300, 350, 400, 450, 500 ]
-  # N_vals = [ 25, 50, 75, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 425, 450, 475, 500 ]
-  # N_vals = s.linspace(100.0, 2000.0, num=20, dtype=int)
-  print "Generating N..."
   for n in N_vals:
-    outprefix = "%s/N/%d" % (outdir, n)
-    generate_data(outprefix, N=n)
+    print "Generating N..."
+    outfile = "%s/N/%d.txt" % (outdir, n)
+    generate_data(outfile, N=n)
