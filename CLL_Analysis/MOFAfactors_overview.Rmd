@@ -1,7 +1,7 @@
 ---
 title: "Overview of MOFA factors of the CLL data"
 author: "Britta Velten"
-date: "04/07/2017"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
 output:
   BiocStyle::html_document:
     toc: true
@@ -26,8 +26,9 @@ options(stringsAsFactors = FALSE)
 "out_import.RData" prepared in import_models.Rmds
 ```{r}
 #output path for plots and data
-plotdir <- "figures/MOFAfactors_overview"
+plotdir <- "figures/MOFAfactors_overview/"
 if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
 outdir <- "out"
 
 # load model selected in import_models.Rmd
@@ -37,39 +38,34 @@ source("plotting_utils.R")
 ```
 
 # Variance explained per view and factor
-```{r, fig.width=12}
+```{r R2_flipped, fig.width=12}
 r2out <- calculateVarianceExplained(model,plotit = FALSE)
 r2out
 
 p <- plotFlippedR2(r2.out)
 
-# pdf(file.path(plotdir, "R2_flipped.pdf"), width=12)
 print(p)
-# dev.off()
 ```
 
 
 
 # Weights on Mutations view for the first two factors
 For small views: Direct inspection of weight is a good way to annotate factors, e.g. here for Mutations.
-```{r, fig.width = 4.4, fig.height=3}
+```{r MutWeights, fig.width = 4.4, fig.height=3}
 # Mutation weights on factor 1
-# pdf(file.path(plotdir,"MutWeights_1.pdf"), width = 4.4, height=3)
 showTopWeightsAndColor(model, "Mutations", "1" , nfeatures = 5,
                        abs=T, Features2color = "IGHV",
                       maxL = 1, scalePerView=T)
-# dev.off()
+
 
 # Mutation weights on factor 2
-# pdf(file.path(plotdir,"MutWeights_2.pdf"), width = 4.4, height=3)
 showTopWeightsAndColor(model, "Mutations", "2" , nfeatures = 5,
                        abs=T, Features2color = "trisomy12",
                        maxL = 1, scalePerView=T)
-# dev.off()
 ```
 
 # Scatterplot of two most important facotrs - bicolor
-```{r, fig.width = 5.5, fig.height = 6}
+```{r ScatterPlot_IGHV_tr12_bicolor, fig.width = 5.5, fig.height = 6}
 # collect data for plot
 df = data.frame(x = Z[, "1"], y = Z[,"2"], 
                 trisomy12 = covariates$trisomy12,
@@ -128,10 +124,7 @@ gg <-  ggplot(df, aes(x=x, y=y, col=IGHV_tr12,shape=IGHV_tr12)) +
           shape = guide_legend(ncol=3)) +
   xlab("Factor 1") + ylab("Factor 2") 
 
-# save to pdf
-# pdf(file.path(plotdir,"ScatterPlot_IGHV_tr12_bicolor.pdf"), width = 5.5, height = 6, useDingbats=F)
 print(gg)
-# dev.off()
 ```
 
 # Enrichment Analysis
@@ -191,7 +184,7 @@ nicelabels <- c(other="other",
 ```
 
 ### Bar plot of enriched gene sets on each factor
-```{r, fig.width = 4, fig.height = 4.8}
+```{r GeneSetsOverview_rot, fig.width = 4, fig.height = 4.8}
 # collect results in dataframe
 pathwaysDF <- melt(gsea.out$sigPathways, value.name="pathway")
 colnames(pathwaysDF) <- c("pathway", "factor")
@@ -214,7 +207,6 @@ pathwaysSummary$factor <- factor(pathwaysSummary$factor, levels = 1:10)
 pathwaysSummary %<>% mutate(type=as.character(nicelabels[type]))
 pathwaysSummary$type <- factor(pathwaysSummary$type, levels=rev(as.character(nicelabels)))
 
-# pdf(file.path(plotdir,"GeneSetsOverview_rot.pdf"), width = 4, height = 4.8)
 ggplot(pathwaysSummary, aes(x=factor, y=count, fill=type)) +
   geom_bar(stat="identity") +
   ylab("Enriched gene sets at FDR 1%") +
@@ -222,7 +214,6 @@ ggplot(pathwaysSummary, aes(x=factor, y=count, fill=type)) +
   scale_fill_manual(values=col4Pathways) +
   theme(legend.position = "top") +
   guides(fill=guide_legend(title="",nrow=2))
-# dev.off()
 ```
 
 # SessionInfo

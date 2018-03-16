@@ -23,7 +23,7 @@ showTopWeightsAndColor <- function(model, view, factor, nfeatures = 5,
   if (sign=="negative") stopifnot(abs==FALSE)
   
   # Collect expectations  
-  W <- getExpectations(model,"SW","E", as.data.frame = T)
+  W <- getExpectations(model,"W", as.data.frame = T)
   W <- W[W$factor==factor & W$view==view,]
   if(scalePerView) W$value <- W$value/max(abs(W$value))
   

@@ -1,13 +1,13 @@
 ---
-title: "Classification of patients into 2 IGHV-like groups based on factor 1"
+title: "Classification of patients into 2 IGHV-like groups based on Factor 1"
 author: "Britta Velten"
-date: "10/08/2017"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
 output:
   BiocStyle::html_document:
     toc: true
 ---
 # Introduction
-This script classifies patients into two groups based on factor 1 and compares the resulting groups to the groups defined by the IGHV status.
+This script classifies patients into two groups based on Factor 1 and compares the resulting groups to the groups defined by the IGHV status.
 
 ```{r, message=F, warning=F}
 library(MOFAtools)
@@ -28,8 +28,9 @@ library(beeswarm)
 (Prepared in import_models.Rmd)
 ```{r}
 #output path for plots and data
-plotdir <- "figures/Analysis_Factor1"
+plotdir <- "figures/IGHVstatus/"
 if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
 outdir <- "out"
 
 # load model selected in import_models.Rmd
@@ -92,29 +93,26 @@ anno_colors<- list(IGHV_label = c("M"="red", "U"="blue", "missing" = "gray"),
 ```
 
 ## Beeswarm plots for agreement of factor groups with clincial IGHV label
-```{r, fig.width = 3, fig.height = 5}
+```{r BeeswarmMislabelling, fig.width = 3, fig.height = 5}
 # use colors defined above
 col4bees <- anno_colors$agreement[df_clustering$agreement]
 
 # make plot
-# pdf(file.path(plotdir,"BeeswarmMislabelling.pdf"), width = 3, height = 5, useDingbats=F)
 par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
 bs <-beeswarm(df_clustering$Z, pwcol = col4bees, pch = 16,
           ylab = paste("Factor", idx_ighv), xlab = "",
           cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
-# dev.off()    
 ```
 
 
 ## Pie plot of IGHV label agreement
-```{r}
+```{r IGHV_classification_pie}
 #pie plot
 df_pie <- df_clustering %>%
   group_by(agreement) %>%
   dplyr::summarize(value=length(patID))
 df_pie$agreement <- factor(df_pie$agreement, levels = rev(df_pie$agreement))
 
-# pdf(file.path(plotdir, "IGHV_classification_pie.pdf"))
 gg_MOFA <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
   geom_bar(stat="identity",width = 1)+
   coord_polar("y", start=0)+
@@ -131,7 +129,6 @@ gg_MOFA <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
   geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=10) +
   scale_color_manual(values=colors_agreemet)
 gg_MOFA
-# dev.off()
 ```
 
 # Heatmap of omic layers annotated with IGHV classification and Factor classification
@@ -142,8 +139,7 @@ df_clustering$IGHV_label <- df_clustering$IGHV
 ```
 
 ## Methylation
-```{r, fig.width = 5.6, fig.height = 4.9}
-# pdf(file.path(plotdir, "HeatmapMeth_IGHV.pdf"), width = 5.6, height = 4.9, onefile = F)
+```{r HeatmapMeth_IGHV, fig.width = 5.6, fig.height = 4.9}
 methData <- data$Methylation
 methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
 pheatmap(cor(methData),
@@ -151,12 +147,10 @@ pheatmap(cor(methData),
          show_rownames = F, show_colnames = F, main = "Methylation",
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0
          )
-# dev.off()
 ```
 
 ### with Legend
-```{r, fig.width = 8, fig.height = 7}
-# pdf(file.path(plotdir, "Heatmap_legend.pdf"), width = 8, height = 7, onefile = F)
+```{r Heatmap_legend, fig.width = 8, fig.height = 7}
 methData <- data$Methylation
 methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
 pheatmap(cor(methData),
@@ -164,12 +158,10 @@ pheatmap(cor(methData),
          show_rownames = F, show_colnames = F, main = "Methylation",
          annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0
          )
-# dev.off()
 ```
 
 ## Drugs
-```{r, fig.width = 5.6, fig.height = 4.9}
-# pdf(file.path(plotdir, "HeatmapDrugs_IGHV.pdf"), width = 5.6, height = 4.9, onefile = F)
+```{r HeatmapDrugs_IGHV, fig.width = 5.6, fig.height = 4.9}
 drugData <- data$Drugs
 drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
 pheatmap(cor(drugData),
@@ -177,12 +169,10 @@ pheatmap(cor(drugData),
          show_rownames = F, show_colnames = F, main = "Drug response",
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0
          )
-# dev.off()
 ```
 
 ## mRNA
-```{r, fig.width = 5.6, fig.height = 4.9}
-# pdf(file.path(plotdir, "HeatmapRNAseq_IGHV.pdf"), width = 5.6, height = 4.9, onefile = F)
+```{r HeatmapRNAseq_IGHV, fig.width = 5.6, fig.height = 4.9}
 mRNAData <- data$mRNA
 mRNAData <- mRNAData[,apply(mRNAData,2, function(d) !all(is.na(d)))]
 pheatmap(cor(mRNAData),
@@ -190,7 +180,6 @@ pheatmap(cor(mRNAData),
          show_rownames = F, show_colnames = F, main = "mRNA",
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0
          )
-# dev.off()
 ```
 
 # SessionInfo

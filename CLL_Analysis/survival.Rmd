@@ -1,7 +1,7 @@
 ---
 title: "Association of latent factors to time to next treatment"
 author: "Britta Velten"
-date: "04/07/2017"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
 output:
   BiocStyle::html_document:
     toc: true
@@ -26,19 +26,27 @@ library(glmnet)
 library(cowplot)
 ```
 
-# Get imported model and related data
-Prepared in CLL_import_technical.Rmd
+
+# I/O options
 ```{r}
 #output path for plots and data
-plotdir <- "figures/survival"
+plotdir <- "figures/survival/"
 if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
 outdir <- "out"
-
-# load model selected in import_models.Rmd
-load(file.path(outdir,"out_import.RData"))
 ```
 
-# Get survival data from Dietrich et al
+# Get fitted model and related data
+(Prepared in import_models.Rmd)
+```{r}
+# load model selected in import_models.Rmd
+load(file.path(outdir,"out_import.RData"))
+
+# helper function for some plots
+source("plotting_utils.R")
+```
+
+# Get survival data from Dietrich et al. 2017
 The patmeta and covariates objects are constucted in import_models.Rmd on the basis of the pace package.
 ```{r}
 data(patmeta, package="pace")
@@ -85,8 +93,7 @@ df_survival %<>% mutate(ymax = ifelse(positive,higher, 1/higher))
 ```
 
 ## Forest Plot
-```{r, fig.width = 7, fig.height = 12}
-# pdf(file.path(plotdir, "ForestPlotSurvival_TTT.pdf"), width = 7, height = 12)
+```{r ForestPlotSurvival_TTT, fig.width = 7, fig.height = 12}
 # TTT
 ggplot(df_survival, aes(x=predictor, y=y,ymin=ymin,ymax=ymax))+
   geom_pointrange( col='#619CFF')+ coord_flip() +
@@ -104,7 +111,6 @@ ggplot(df_survival, aes(x=predictor, y=y,ymin=ymin,ymax=ymax))+
         plot.title = element_text(size=18)) +
   guides(colour=F) +
   xlab("Factor") + scale_color_discrete(drop=FALSE)
-# dev.off()
 ```
 
 
@@ -189,7 +195,7 @@ names(cols4survival) <- c("Methylation", "Mutations","mRNA",  "Drugs", "all", "M
 
 ## Main Plot 4(a): PCs as predictors
 Plot the resulting prediciton performance when principal componenets are included as predictors in a multivariate Cox model.
-```{r}
+```{r HarrelsC_TTT}
 summaryHc_main <- filter(summaryHc,
                          predictors %in% c(names(data), "all", "MOFA factors"))
 limits <- aes(ymax = summaryHc_main$x.mean + summaryHc_main$se,
@@ -199,7 +205,6 @@ summaryHc_main$predictors <- factor(summaryHc_main$predictors,
                                                "all", "MOFA factors"))
 
 # barplot
-# pdf(file.path(plotdir, "HarrelsC_TTT.pdf"))
   ggplot(summaryHc_main, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
     geom_bar(stat = "identity") + 
    coord_cartesian(ylim = c(0.5,0.85)) +
@@ -213,12 +218,11 @@ summaryHc_main$predictors <- factor(summaryHc_main$predictors,
         legend.position= "none",
         plot.title = element_text(size=20)) +
   ylab("Harrell's C-index") + xlab("")
-# dev.off()
 ```
 
 ## Supplement S14: All features as predictors
 Plot the resulting prediciton performance when all features are included as predictors in a multivariate Cox model with ridge penalty.
-```{r}
+```{r HarrelsC_TTT_supp}
 summaryHc_supp <- filter(summaryHc,
                          predictors %in% c(paste(c(names(data), "all"), "full", sep="_"), "MOFA factors"))#, "factors 1,7,8"))
 limits <- aes(ymax = summaryHc_supp$x.mean + summaryHc_supp$se,
@@ -228,7 +232,6 @@ summaryHc_supp$predictors <- factor(sapply(summaryHc_supp$predictors, function(n
                                                "all", "MOFA factors"))
 
 # barplot
-# pdf(file.path(plotdir, "HarrelsC_TTT_supp.pdf"))
   ggplot(summaryHc_supp, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
     geom_bar(stat = "identity") + 
    coord_cartesian(ylim = c(0.5,0.85)) +
@@ -240,13 +243,12 @@ summaryHc_supp$predictors <- factor(sapply(summaryHc_supp$predictors, function(n
         legend.position= "none",
         plot.title = element_text(size=20)) +
   ylab("Harrell's C-index") + xlab("")
-# dev.off()
 ```
 
 
 # Kaplan-Meier plots
 To visualize the association of the factor to clinical outcome. Samples are split into two groups based on the continious factors and a Kaplan Meier plot is made for those groups. Note that this is mainly for visualisation purposes, usually the continious factor should be considered as above in the Cox models.
-```{r, fig.width=10.5, fig.height=3.5}
+```{r KaplanMeier, fig.width=10.5, fig.height=3.5}
   # calculate KM for all LFs
   glist <- lapply(as.character(1:(ncol(Z)-1)), function(lfno){
   
@@ -275,10 +277,202 @@ To visualize the association of the factor to clinical outcome. Samples are spli
  })
  
  # make joint plot of significant factors:
-  # pdf(file.path(plotdir, "KaplanMeier.pdf"), width=10.5, height=3.5)
     grid.arrange(glist[[1]], glist[[7]], glist[[8]], ncol=3) 
-  # dev.off()
 ```
+
+# Connections to clinical covariates
+
+## Load clinical covariates
+```{r}
+covariates_mofa <- covariates
+
+# Get patient IDs transaltion form P to H numbers
+load("~/Documents/cll/var/encPatientID_160218.RData")
+rownames(encPatientID) <- encPatientID$PatientID
+
+# doubling times (only available for 90 patients)
+load("~/Documents/CLL/OtherData/DoublingTime_070816.RData")
+LDT <- as.data.frame(LDT)
+rownames(LDT) <- LDT$patID
+rownames(LDT) <- encPatientID[rownames(LDT),]$PatientID2
+doublingtimes <- LDT[rownames(Z),]$doubling.time
+
+# Add Mutations and LDT to covariates
+covariates <- cbind(covariates_mofa[rownames(Z),],
+                    t(model@TrainData$Mutations)[rownames(Z),!colnames(t(model@TrainData$Mutations))%in% colnames(covariates_mofa)],
+                    doubling.times =doublingtimes)
+
+# Clinical markers to compare
+biomarkers <- c("IGHV", "TP53", "age", "sex",
+                "MethylationCluster",
+                 "pretreated",
+                 "doubling times")
+
+# numeric code for IGHV and MC
+covariates[,"IGHV"] <- ifelse(covariates[,"IGHV"]=="U",0,1)
+covariates[,"MethylationCluster"] <- ifelse(covariates[,"MethylationCluster"]=="LP",0,
+                                            ifelse(covariates[,"MethylationCluster"]=="IP",0.5,1))
+
+#nice names
+colnames(covariates) <- sapply(colnames(covariates), function(s) ifelse(s=="IC50beforeTreatment","pretreated",s) )
+colnames(covariates) <- sapply(colnames(covariates), function(s) ifelse(s=="doubling.times","doubling times",s) )
+
+# get biomarkers
+all(biomarkers %in% colnames(covariates))
+covariates <- covariates[,biomarkers]
+```
+
+## Marginal Cox models
+All covariates are scaled to ensure comparability of hazard ratio.This, however, looses interpretability of HR for 0-1 groups.
+```{r}
+  # subset to patients having the clinical markers
+  commonPats <- intersect(commonPats, rownames(covariates)[!apply(covariates,1, function(pat) any(is.na(pat)))])
+  print(length(commonPats))
+  print(paste("uncensored:",sum(survivalData[,2])))
+  Zcommon <- Z[commonPats,]
+  covariatesCommon <- covariates[commonPats,]
+  survivalData <- survivalData[commonPats,]
+    
+  # construct survival object
+  SurvObject <-Surv(survivalData[,1],survivalData[,2])
+  
+  # fit a cox model for latent factors, scaling predictors
+  pval_LFs <- sapply(which(apply(Z,2,var, na.rm=T)>0), function(i){
+    fit <- coxph(SurvObject  ~  scale(Zcommon[,i]))  
+    s <- summary(fit) 
+    c(p      = s[["coefficients"]][, "Pr(>|z|)"], 
+      coef   = s[["coefficients"]][, "exp(coef)"], 
+      lower  = s[["conf.int"]][, "lower .95"], 
+      higher = s[["conf.int"]][, "upper .95"])
+  })
+  colnames(pval_LFs) <- paste("Factor",colnames(Z)[which(apply(Z,2,var, na.rm=T)>0)])
+
+  # fit a cox model for other relevant biomarkers, scaling all predictor
+  pvals_Cov<-sapply(biomarkers, function(cnm){
+    fit <- coxph(SurvObject  ~  scale(covariatesCommon[,cnm])) 
+    s <- summary(fit) 
+    c(p      = s[["coefficients"]][, "Pr(>|z|)"], 
+      coef   = s[["coefficients"]][, "exp(coef)"], 
+      lower  = s[["conf.int"]][, "lower .95"], 
+      higher = s[["conf.int"]][, "upper .95"])
+  })
+
+  # collect in data frame
+  pvalsSurv<-cbind(pval_LFs,pvals_Cov)
+  df_surv <- as.data.frame(t(pvalsSurv))
+  df_surv$predictor <- rownames(df_surv)
+  types <- list(latentFactors = colnames(pval_LFs), 
+                mutations = biomarkers[biomarkers%in% rownames(model@TrainData$Mutations)], 
+                demographics  = biomarkers[grepl("sex|age", biomarkers)],
+                clinical = biomarkers[grepl("doubling|pretreated", biomarkers)],
+                other = biomarkers[grepl("MethylationCluster", biomarkers)])
+
+  df_surv$predictorType <- with(df_surv, ifelse(predictor %in% types$latentFactors, "MOFA factors",
+                              ifelse(predictor %in% types$mutations, "genetic",
+                                     ifelse(predictor %in% types$clinical, "clinical",
+                                            ifelse(predictor %in% types$demographics, "demographic", "other")))))
+  df_surv$predictor <- factor(df_surv$predictor, levels = rev(Reduce(c, types)))
+  df_surv$survType <- "Time to next treatment"
+  df_surv$label <- paste(formatC(df_surv$p, digits = 2), sep="")
+  df_surv
+```
+
+Make Forest plot
+```{r forestplot_clinical}
+col4Types <- c(cols4survival["MOFA factors"], cols4survival["Mutations"],
+              "black", "darkgreen", cols4survival["Methylation"])
+names(col4Types) <- c('MOFA factors', "genetic", "demographic", "clinical", "other")
+gg_forest <- ggplot(filter(df_surv, !predictor %in% paste("Factor",1:10)| p < 0.01), aes(x=predictor,y=coef,ymin=lower,ymax=higher, col=predictorType))+
+  geom_pointrange()+ coord_flip() +
+  scale_x_discrete() + ylab("Hazard Ratio")+
+  scale_y_log10(breaks=c(0.1,0.3,1,3), limits=c(min(df_surv$lower),5)) +
+  geom_hline(aes(yintercept=1), linetype="dotted") + facet_wrap(~survType) +
+  geom_text(aes(label=label, y=4),size=4.5, vjust = 0)+
+  theme(text =element_text(size=16),
+        axis.ticks.y = element_blank(),
+        legend.position="bottom", panel.grid =element_blank(),
+        panel.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        axis.text.y = element_text(size=16),
+        plot.title = element_text(size=18)) +
+  guides(colour=guide_legend("predictor type", ncol=2)) +
+  xlab("") + scale_color_manual(values=col4Types)
+gg_forest
+```
+
+
+## C-Index
+Harrals C-Index is used as performance measure, 5-fold stratified cross-validation.
+```{r}
+  #stratified CV to include same proportion of uncensored cases
+  set.seed(1290)
+  uncensored <- SurvObject[,"status"]==1
+  cv_ix <- dismo::kfold(1:length(commonPats), k=5, by=uncensored)
+  
+  # add covariates from forest plot
+  FeatureList <- list()
+  FeatureList$factors = Zcommon[,c("1","7","8")]
+  FeatureList$clinical <- covariatesCommon[colnames(covariatesCommon) %in% types$clinical]
+  FeatureList$demographic <- covariatesCommon[colnames(covariatesCommon) %in% types$demographics]
+  FeatureList$other <- covariatesCommon[colnames(covariatesCommon) %in% types$other]
+  FeatureList$genetic <- covariatesCommon[colnames(covariatesCommon) %in% types$mutations]
+
+  # fit a cox model and predict on left-out fold
+  fit <- lapply(unique(cv_ix), function(i){
+      c = lapply(FeatureList, function(x) coxph(SurvObject[cv_ix!=i,]  ~ as.matrix(x)[cv_ix!=i,]))
+      p = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y), FeatureList, c)
+      CI=apply(-p,2, rcorr.cens, SurvObject[cv_ix==i])[1,]
+      list(CI=CI,c=c)
+  })
+
+    # get cross-validated CI
+    concordanceCV <- sapply(fit, function(l) l$CI)
+    colnames(concordanceCV) <- unique(cv_ix)
+    df_hc <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI")
+    df_hc$survType <-"Time to next treatment"
+    df_hc$predictor <- ifelse(df_hc$predictor=="factors", "MOFA factors", as.character(df_hc$predictor))
+    df_hc
+
+
+# calculate summary statistics across folds
+summaryHc <- aggregate(df_hc$CI,
+    by = list(predictors = df_hc$predictor, survType=df_hc$survType), 
+    FUN = function(x) c(mean = mean(x), sd = sd(x),
+                        n = length(x)))
+summaryHc <- do.call(data.frame, summaryHc)
+summaryHc$se <- summaryHc$x.sd / sqrt(summaryHc$x.n)
+
+summaryHc
+```
+
+Make barplot
+```{r barplot_clinical}
+limits <- aes(ymax = summaryHc$x.mean + summaryHc$se,
+              ymin = summaryHc$x.mean - summaryHc$se)
+
+# barplot
+  gg_bar <- ggplot(summaryHc, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
+    geom_bar(stat = "identity") + 
+   coord_cartesian(ylim = c(0.5,0.85)) +
+  # ggtitle(paste("Prediction of time to treatment"))+
+  scale_fill_manual(values=col4Types) + 
+  geom_errorbar(limits, position = "dodge", width = 0.25)+
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5,hjust = 1, size=16, lineheight=-2),
+        axis.text.y = element_text(size=16),
+         axis.title.y = element_text(size=16),
+        strip.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        legend.position= "none",
+        plot.title = element_text(size=18)) +
+  ylab("Harrell's C-index") + xlab("")
+gg_bar
+```
+
+## Arrange plots
+```{r TTT_clinical, fig.width=10, fig.height=7}
+plot_grid(gg_forest, gg_bar, labels = c("a","b"), rel_widths=c(1.5,1))
+```
+
 
 
 # SessionInfo

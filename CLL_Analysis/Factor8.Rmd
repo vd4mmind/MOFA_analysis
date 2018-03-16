@@ -1,0 +1,143 @@
+---
+title: "Analysis of Factor 8"
+author: "Britta Velten"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+# Introduction
+This script analyses Factor 8, which is linked survival and pretreatment. The analysis is based on the model and other objects defined in import_models.Rmd.
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(RColorBrewer)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(ggpubr)
+library(cowplot)
+```
+
+
+# I/O options
+```{r}
+#output path for plots and data
+plotdir <- "figures/Factor8/"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
+outdir <- "out"
+```
+
+# Get fitted model and related data
+(Prepared in import_models.Rmd)
+```{r}
+# load model selected in import_models.Rmd
+load(file.path(outdir,"out_import.RData"))
+
+# helper function for some plots
+source("plotting_utils.R")
+```
+
+# Active Views
+```{r R2}
+r2 <- calculateVarianceExplained(model)
+r2df <- melt(r2$R2PerFactor[c(8),,drop=F], varnames = c("Factor", "Omic"))
+r2df$Factor <- as.character(r2df$Factor)
+r2df$value <- pmax(r2df$value,0)
+gg_r2 <- ggplot(r2df, aes(x=Omic, y=value, group=Factor, fill=Factor, label=Omic)) +
+  geom_text(angle=90, col="black", nudge_y = 0.001, hjust=0)+
+  geom_bar(stat="identity", position = "dodge") + ylab(bquote(R^2))+
+  theme_classic() +
+  scale_fill_manual(values=c("7"="darkgreen", "8"="navy")) +
+  xlab("") + ylim(c(0,0.053)) + theme( axis.text.x = element_blank())+
+  guides(fill="none")
+print(gg_r2)
+```
+
+
+# Pretreatment
+```{r pretreated}
+pretreated <- covariates[rownames(Z),]$IC50beforeTreatment
+df <- data.frame(pretreated=pretreated, LF8=Z[,8])
+df <- filter(df, !is.na(pretreated))
+gg_pre <- ggplot(df, aes(y=LF8, x=pretreated, fill=pretreated)) + geom_violin() + ylab("Factor 8") + scale_fill_manual()
+```
+
+# Gene expression 
+## Weights
+```{r weights_mRNA}
+getTopWeights <- function(model, view, factor, n=20){
+  rownames(getWeights(model, view,factor)[[1]])[order(abs(getWeights(model, view, factor)[[1]]), decreasing = T)][1:n]
+}
+
+topWeights_mRNA <- getTopWeights(model, "mRNA", "8", 20)
+
+gg_mRNA <- plotTopWeights(model, "mRNA", "8", 20)
+gg_mRNA <- gg_mRNA + ylab("Absolute loading on Factor 8")+ xlab("")+ theme_classic() +
+  theme(plot.margin=margin(t=0.5,r=0,b=0,l=0,"cm"))
+
+
+df_anno <- data.frame("Factor 8" = Z[,"8"])
+rownames(df_anno) <- rownames(Z)
+mRNA_hm <- plotDataHeatmap(model, "mRNA", 8, transpose = TRUE,
+                                features= topWeights_mRNA,
+                                sortSamples = TRUE, 
+                                annotation_col=df_anno,
+                                cluster_cols=FALSE,
+                                cluster_rows=FALSE,
+                                # treeheight_row = 0,
+                                show_colnames=F)$gtable
+gg_mRNA_hm <- as_ggplot(mRNA_hm)+theme(plot.margin=margin(t=0,r=-3,b=0.7,l=0.5,"cm")) +
+  theme(axis.text.y = element_blank()) + ylab("")
+```
+
+
+## Enriched gene sets 
+```{r}
+data("reactomeGS", package="MOFAtools")
+# use ensIDs
+if(!all(grepl("ENS", featureNames(model)$mRNA))) 
+  MOFAtools::featureNames(model)$mRNA <- mRNA$ens_id[match(MOFAtools::featureNames(model)$mRNA, mRNA$symbol)]
+
+gsea.out <- FeatureSetEnrichmentAnalysis(model, "mRNA", reactomeGS,
+                                         statistical.test = "parametric",
+                                         alpha = 0.01, min.size = 15)
+names(gsea.out$sigPathways) <- colnames(Z)[-1]
+
+addline_format <- function(x,...){
+    gsub(' ','\n',x)
+}
+
+df_gse <- data.frame(pvaladj=gsea.out$pval.adj[,8], pathway=rownames(gsea.out$pval.adj))
+threshold=0.01
+gg_gse <- ggplot(filter(df_gse, pvaladj<threshold), aes(y=-log10(pvaladj), x=pathway)) +
+                   geom_point() + ylab("-log pvalue") +
+                    geom_hline(yintercept = -log10(threshold), linetype = "longdash") +
+                    geom_segment(aes(xend = pathway,yend = 0)) + coord_flip()+
+                     theme_classic()+ xlab("") +
+                    scale_x_discrete(labels=c(gsub("s a", "s\na",gsea.out$sigPathways[[8]][1]),gsub("d g", "d\ng",gsea.out$sigPathways[[8]][2])))
+```
+
+
+# Plot assembly
+```{r SXX_LF8, width=10, height=16}
+gg_row1 <- plot_grid(gg_r2,gg_gse, ncol=2,
+          labels = letters[1:2], rel_widths = c(0.8,1), axis="b", align="h")
+gg_row2 <- plot_grid(gg_mRNA,gg_mRNA_hm, ncol=2,
+          labels = letters[3:4], rel_widths = c(0.6,1))
+
+grid.arrange(gg_row1, gg_row2, ncol=1, heights=c(0.7,1))
+```
+
+# SessionInfo
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,146 @@
+---
+title: "Analysis of Factor 3"
+author: "Britta Velten"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+# Introduction
+This script analyses Factor 3, which is linked to a general level of drug sensitivity. The analysis is based on the model and other objects defined in import_models.Rmd.
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggpubr)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+library(beeswarm)
+# library(pace)
+knitr::opts_chunk$set(fig.path = "figures_Factor3/", dev = c('png','pdf'))
+```
+
+# I/O options
+```{r}
+#output path for plots and data
+plotdir <- "figures/Factor3/"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
+outdir <- "out"
+```
+
+# Get fitted model and related data
+(Prepared in import_models.Rmd)
+```{r}
+# load model selected in import_models.Rmd
+load(file.path(outdir,"out_import.RData"))
+
+# helper function for some plots
+source("plotting_utils.R")
+```
+
+# R2
+```{r R2}
+r2 <- calculateVarianceExplained(model)
+
+r2df <- melt(r2$R2PerFactor[3,, drop=F], varnames = c("Factor", "Omic"))
+r2df$Factor <- as.factor(r2df$Factor )
+r2df$value <- pmax(r2df$value,0)
+gg_r2 <- ggplot(r2df, aes(x=Omic, y=value, group=Factor, fill=Factor)) +
+  geom_bar(stat="identity", position = "dodge") +ylab("R2")+
+  scale_fill_manual(values=c("3"="darkgreen", "4"="navy")) +
+  xlab("") + geom_hline(yintercept=0.01, linetype="dashed", col="grey")
+print(gg_r2)
+```
+
+# Weights
+```{r, echo=F}
+ MyplotWeights <- function (object, view, factor, nfeatures = 10, abs = FALSE, 
+    manual = NULL, color_manual = NULL, scale = TRUE) 
+{
+    if (!is(object, "MOFAmodel")) 
+        stop("'object' has to be an instance of MOFAmodel")
+    stopifnot(all(view %in% viewNames(object)))
+    if (is.numeric(factor)) {
+        if (object@ModelOpts$learnIntercept == T) 
+            factor <- factorNames(object)[factor + 1]
+        else factor <- factorNames(object)[factor]
+    }
+    else {
+        stopifnot(factor %in% factorNames(object))
+    }
+    if (!is.null(manual)) {
+        stopifnot(class(manual) == "list")
+        stopifnot(all(Reduce(intersect, manual) %in% featureNames(object)[[view]]))
+    }
+    W <- getWeights(object, views = view, factors = factor, as.data.frame = T)
+    W <- W[W$factor == factor & W$view == view, ]
+    if (scale) 
+        W$value <- W$value/max(abs(W$value))
+    if (abs) 
+        W$value <- abs(W$value)
+    W$group <- "0"
+    if (nfeatures > 0) 
+        W$group[abs(W$value) >= sort(abs(W$value), decreasing = T)[nfeatures]] <- "1"
+    if (!is.null(manual)) {
+        if (is.null(color_manual)) {
+            color_manual <- hcl(h = seq(15, 375, length = length(manual) + 
+                1), l = 65, c = 100)[1:length(manual)]
+        }
+        else {
+            stopifnot(length(color_manual) == length(manual))
+        }
+        for (m in 1:length(manual)) {
+            W$group[W$feature %in% manual[[m]]] <- as.character(m + 
+                1)
+        }
+    }
+    W <- W[order(W$value), ]
+    W$feature <- factor(W$feature, levels = W$feature)
+    W$tmp <- as.character(W$group != "0")
+    gg_W <- ggplot(W, aes(x = feature, y = value, col = group)) + 
+        geom_point(aes(size = tmp)) + labs(x = "Rank position", 
+        y = "Loading") + scale_x_discrete(breaks = NULL, expand = c(0.05, 
+        0.05)) + ggrepel::geom_text_repel(data = W[W$group != 
+        "0", ], aes(label = feature, col = group), segment.alpha = 0.1, 
+        segment.color = "black", segment.size = 0.3, box.padding = unit(0.5, 
+            "lines"), show.legend = F)
+    gg_W <- gg_W + scale_size_manual(values = c(0.5, 2)) + guides(size = F)
+    cols <- c("grey", "black", color_manual)
+    gg_W <- gg_W + scale_color_manual(values = cols) + guides(col = F)
+    return(gg_W)
+}
+```
+
+```{r Weights}
+ggW <- MyplotWeights(model, "Drugs", "3", nfeatures = 0) +
+  geom_hline(yintercept = 0, color="darkred", linetype="dashed") 
+```
+
+# GDLS
+```{r GLDS}
+dd <- data$Drugs
+df_GDLS <- data.frame(GLDS= colMeans(dd), Factor.3 = Z[,"3"])
+ggGLDS <- ggplot(df_GDLS, aes(x=Factor.3, y=GLDS)) + geom_point() +geom_smooth(method = 'lm') +
+  annotate("text",x=-3,y=0.8,label=paste("cor=",round(cor(df_GDLS$GLDS,df_GDLS$Factor.3, use="complete.obs"),2)), col="blue", cex=5)+
+  xlab("Factor 3") + ylab("General drug sensitivity")
+```
+
+# Arrange plot
+```{r Factor3_SXX, fig.height=7, fig.width=5}
+plot_grid(ggW, ggGLDS, align = "hv", axis = "l", nrow=2, labels=c("a","b"))
+```
+
+# SessionInfo
+```{r}
+sessionInfo()
+```
+
+
