@@ -37,7 +37,7 @@ Content
     7) Factor4.Rmd  [html](CLL_Analysis/Factor4.html)
         * Code to charatcerize Factor 4
         
-    8) IGHVstatus.Rmd  [html](CLL_Analysis/Factor8.html)
+    8) Factor8.Rmd  [html](CLL_Analysis/Factor8.html)
         * Code to charatcerize Factor 8
     
     9) survival.Rmd  [html](CLL_Analysis/survival.html)
