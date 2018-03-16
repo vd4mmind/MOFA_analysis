@@ -51,7 +51,7 @@ Content
 * `/pretreatment_factor/`: characterisation of Factor 7 (associated to preatreatment)
 * `/robustness/`: analysis of the robustness of the mode
 * `/run_mofa/`: template scripts to run MOFA
-* `/scalability/`: scalability analysis of MOFA
+* `/scalability/`: scalability analysis of MOFA, GFA and iCluster
 * `/simulations/`: assessment of technical capabilities of MOFA on simulated data
 * `/sparsity/`: assessment of sparsity priors
 * `/stress_factor/`: characterisation of Factor 5 (associated to oxidative stress response)
