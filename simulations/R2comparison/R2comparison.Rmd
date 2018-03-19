@@ -114,7 +114,8 @@ names(alpha) <- sub("k","",sapply(strsplit(names(alpha), "_"), "[[",1))
 alpha <- alpha[unique(kvec)]
 ```
 
-# Calculate variance explained per view for iCluster
+# Helper functions
+Function to calculate variance explained per view for iCluster 'calculateVarianceExplained4iClust'
 ```{r, echo=F}
 calculateVarianceExplained4iClust <- function(iCl_fit, k=NULL, data, plotit=T, perFeature=F, 
                                        orderFactorsbyR2=F, showtotalR2=T, showVarComp=F) {
@@ -141,7 +142,7 @@ calculateVarianceExplained4iClust <- function(iCl_fit, k=NULL, data, plotit=T, p
   weightsiClust <- iClmodel$beta
   Y <- data[grepl(paste("k",k,"_m[0-2]", sep=""),names(data))]
   ZiClust <- iClmodel$meanZ
-  corrplot::corrplot(cor(ZiClust), title = "iCluster factors correlation")
+  # corrplot::corrplot(cor(ZiClust), title = "iCluster factors correlation")
   intercept <- iClmodel$alpha
   names(intercept) <- names(Y)
   SW <- lapply(seq_along(weightsiClust), function(d) cbind(intercept=intercept[[d]], weightsiClust[[d]])) 
@@ -195,7 +196,7 @@ calculateVarianceExplained4iClust <- function(iCl_fit, k=NULL, data, plotit=T, p
 }
 ```
 
-Function to plot R2:
+Function to plot R2: 'plotR2'
 ```{r, echo=F}
 library(scales)
 plotR2 <- function(fvar_mk, title="") { 
@@ -296,7 +297,7 @@ gg_GFA_fixed <- plotR2(pmax(r2GFA_fixed,0), title = "GFA (fixed)")
 gg_truth <- plotR2(truepattern, title = "ground truth")
 
 # save
-gg_legend <- grid.arrange(ggplot(),get_legend(gg_truth), get_legend(gg_MOFA+ guides(fill=guide_legend(bquote(R^2)))),ggplot(), ncol=1, heights=c(1.5,1,1,1.5))
+if(i==1) gg_legend <- grid.arrange(ggplot(),get_legend(gg_truth), get_legend(gg_MOFA+ guides(fill=guide_legend(bquote(R^2)))),ggplot(), ncol=1, heights=c(1.5,1,1,1.5))
 gg_single[[i]] <-grid.arrange(gg_truth+guides(fill=F),
                               gg_MOFA+guides(fill=F) + ylab(""),
                               gg_iCluster+guides(fill=F) + ylab(""),
