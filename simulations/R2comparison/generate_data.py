@@ -105,12 +105,15 @@ if __name__ == "__main__":
   ntrials = 1
   
 
-  # Varying number of factors
+  # Varying dimension: number of factors
   K_vals = [ 5, 10, 15, 20 ]
   # K_vals = range(5,50+1)
+
+  # Fixed dimensions
   M=3
   N=100
   D=5000
+
   print "Generating data..."
   for k in K_vals:
     for trial in xrange(ntrials):
