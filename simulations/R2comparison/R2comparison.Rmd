@@ -1,5 +1,5 @@
 ---
-title: "iCluster performance on simulated data"
+title: "Comparison of variance decomposition using GFA, iCLuster and MOFA"
 author: "Britta Velten"
 date: '`r format(Sys.time(), "%d %B, %Y")`'
 output:
