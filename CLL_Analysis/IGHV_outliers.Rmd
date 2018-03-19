@@ -1,0 +1,234 @@
+---
+title: "Investigate discordant IGHV cases"
+author: "Britta Velten"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(cowplot)
+library(beeswarm)
+library(tidyverse)
+```
+
+
+# colors 
+```{r}
+ighv_colors <- c("M"="red", "U"="blue")
+patcols <- c("cornflowerblue", "coral2", "cyan3")
+names(patcols) <- c("P0108", "P0432", "P0437")
+```
+
+#Load model used for paper
+```{r}
+load("../CLL_MOFA_data/Analysis/code4manuscript/out_import_technical_flipped.RData")
+
+#output path for plots
+plotdir <- "figures/"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path = plotdir, dev=c("png", "pdf"))
+
+# idx for IGHV latent factor
+idx_ighv <- "1"
+
+# helper function for some plots
+source("../CLL_MOFA_data/Analysis/code4manuscript/plottingUtils.R")
+
+options(stringsAsFactors = FALSE)
+```
+
+# Get MC, IGHV and MOFA's classifications
+```{r}
+# methylation cluster
+MC <- covariates[, "MethylationCluster"]
+MC[is.na(MC)] <- "missing"
+names(MC) <- rownames(covariates)
+
+# IGHV status
+IGHV <- covariates[,"IGHV"]
+IGHV[is.na(IGHV)] <- "missing"
+names(IGHV) <- rownames(covariates)
+
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZIGHV <- kmeans(Z[,idx_ighv], 2, nstart=1000, iter.max = 1000)
+ZIGHV <- ZIGHV$cluster
+
+# label clusters as U and M-CLL
+IGHV[IGHV==0] <- "U"
+IGHV[IGHV==1] <- "M"
+ZIGHV[ZIGHV==1]<-"M"
+ZIGHV[ZIGHV==2]<-"U"
+
+# collect labels and factor values in data-frame
+df_clustering <- data.frame(IGHV = as.factor(IGHV),
+                            ZIGHV=ZIGHV,
+                            MC = as.factor(MC),
+                            patID = rownames(Z),
+                            Z = Z[,idx_ighv])
+
+#check agreement between clusters
+clagree <- paste(ZIGHV ,IGHV, sep="_")
+clagree <- ifelse(clagree %in% c("M_M", "U_U"), "agreement with label",
+                  ifelse(grepl("missing",clagree), "label missing",
+                         ifelse(clagree=="M_U", "U-CLL clustered as M-CLL", "M-CLL clustered as U-CLL" )))
+
+df_clustering$agreement <- clagree
+```
+
+
+# Load additional information on patients
+```{r}
+# match to Patient Id
+load("~/Documents/cll/var/encPatientID_160218.RData")
+df_clustering$patID2 <- encPatientID$PatientID[match(as.character(df_clustering$patID), encPatientID$PatientID2)]
+# write.csv(df_clustering, file="IGHV_imputed.csv")
+
+# add extended meta data
+patmeta_pace <- patmeta
+load("~/Documents/cll/var/patmeta_150609.RData")
+patmeta_all <-patmeta
+rm(patmeta)
+df_meta <- cbind(df_clustering, patmeta_all[as.character(df_clustering$patID2), grepl("IGHV|pat", colnames(patmeta_all))])
+
+# add mutation data
+df_meta <- cbind(df_meta,t(data$Mutations)[as.character(df_clustering$patID), colnames(t(data$Mutations))!=
+                                             "IGHV"])
+df_meta$agree <- ifelse(grepl("clustered",df_meta$agreement),0,ifelse(grepl("missing",df_meta$agreement), NA, 1))
+
+write.csv(df_meta, file="IGHV_meta_revision.csv")
+
+df_meta$V3_21 <- df_meta$"IGHV clinical gene usage"=="V3-21"
+
+df_meta_dis <- filter(df_meta, agree==0)
+write.csv(df_meta_dis, file="missclassified_cases_muta_revision.csv")
+
+df_meta_dis_short <- df_meta_dis[, sapply(colnames(df_meta_dis), function(cnm){
+  c <- df_meta_dis[,cnm]
+ !all(c[!is.na(c)]==0)
+})]
+write.csv(df_meta_dis_short, file="missclassified_cases_mut_short_revision.csv")
+```
+
+# Drug response data
+Do we have data from other screens on the three patients which are misclassified? YES : CPS1000
+```{r}
+extremeCases <- filter(df_meta_dis,  MC !="IP")
+extremeCases$patID2
+
+SampleOverview <- read.csv("~/Documents/CLL/OtherData/2018-01-16_samples.csv")
+additionalSamples <- filter(SampleOverview, Patient.ID %in% extremeCases$patID2, screen_EMBLI==1|screen_EMBLII==1| screen_synergy==1| screen_CPS1000==1, screen_VP5C1==0, screen_IC50==0, screen_pilot67==0)
+```
+
+CPS1000: ONO-4059 is a drug targeting BTK which was not included in the previous screens.
+```{r}
+options(stringsAsFactors = F)
+load("CPS1000_180202.RData")
+
+# select drugs targeting the BCR pathway not previousy included
+unique(filter(pheno1000, Pathway %in% c("B-cell receptor"))$Drug)
+
+# only include patients that were considered for MOFA
+pheno1000 <- as.data.frame(pheno1000) 
+pheno1000_sub <- filter(pheno1000, diagnosis=="CLL",
+                        patientID %in% df_clustering$patID2,
+                        Drug %in% c("ONO-4059"))
+length(unique(pheno1000_sub$patientID))
+
+# add information on IGHV and from MOFA
+pheno1000_sub %<>% mutate(patIDH = encPatientID[as.character(patientID),]$PatientID2)
+pheno1000_sub %<>% mutate(IGHV =IGHV[patIDH],
+                          ZIGHV =ZIGHV[patIDH],
+                          LF1 = Z[patIDH, idx_ighv],
+                          outlier=ifelse(patientID %in% extremeCases$patID2,T,F))
+pheno1000_sub %<>% filter(IGHV!="missing")
+
+# form groups based on IGHV status excluding the outiers
+pheno1000_sub %<>% mutate(id=ifelse(outlier, as.character(patientID), paste0(IGHV,"-CLL")))
+
+# use edge-corrected value of drug responses
+
+# summarize by mean if multiple samples present for a patient
+pheno1000_sub_sum <- pheno1000_sub %>% 
+  group_by(patIDH, Concentration, Drug, Target,Pathway,Unit, outlier, IGHV, id, LF1, ZIGHV) %>%
+  summarise(meanViab=mean(normVal.adj.sigm))
+
+#drug response curves
+ggplot(pheno1000_sub_sum, aes(x=Concentration, y=meanViab, col=IGHV, linetype=outlier, group=id, shape=id)) +
+  stat_summary(fun.y  = mean, geom = 'point')+ stat_summary(fun.data = mean_se, fun.args = list(mult=2)) +
+  stat_summary(fun.y = mean,geom="line")  +
+  facet_wrap(~Drug, scales = 'free_x')
+
+# boxplots
+gg_drug <- ggplot(pheno1000_sub_sum, aes(x=id, y=meanViab, col=IGHV, group=id)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(height=0, width=0.1, alpha=0.5)  +
+  facet_wrap(~Concentration, ncol=3, labeller = label_bquote(paste(.(as.character(Concentration)),mu,"M"))) + 
+  # facet_wrap(~Concentration, scales = 'free_x', ncol=5) +
+  scale_alpha_manual(values = c("TRUE"=1, "FALSE"=0.4)) +
+  scale_color_manual(values = ighv_colors) +
+  theme(text = element_text(size=18),
+        axis.text.x = element_text(angle = 60, vjust=1, hjust=1)) +
+  xlab("") + ylab("viability")
+```
+
+# WES data
+```{r}
+options(stringsAsFactors = F)
+# load data
+wes <- read.csv("2017-09-25_wes_snv.csv", header = T)
+
+# count number of mutations in IGHV genes
+nMutdf <- wes %>%
+  group_by(hipoID) %>%
+  summarise(nMut = sum(grepl("IGHV", GENE)))
+
+# Add HipoID- Patient ID info and IGHV status
+load("patmeta_180122.RData")
+ighv <- select(patMeta, c(IGHV.status, HIPO.ID, Patient.ID))
+ighv %<>% mutate(PatIDH = encPatientID[Patient.ID,]$PatientID2)
+nMutdf <- left_join(nMutdf, ighv, by=c("hipoID" = "HIPO.ID"))
+
+# Add MOFA annotations
+patZ <- rownames(Z)
+nMutdf_sub <- filter(nMutdf, PatIDH %in% patZ, !is.na(IGHV.status))
+nrow(nMutdf_sub)
+nMutdf_sub %<>% mutate(MOFA_outlier= ifelse(Patient.ID %in% c("P0108", "P0432", "P0437"),T, F),
+                       ZIGHV = ZIGHV[PatIDH])
+
+# Plot
+gg_WES <- ggplot(nMutdf_sub, aes(x=IGHV.status, y= nMut, label=Patient.ID)) +
+  ggbeeswarm::geom_beeswarm(aes(col=IGHV.status), alpha=0.5)+
+    scale_color_manual(values = ighv_colors) +
+   # scale_color_manual(values=c("TRUE"="red", "FALSE"="black"))
+  ggrepel::geom_text_repel(aes(label=ifelse(MOFA_outlier,Patient.ID, "")),
+                           box.padding=1, cex=5, nudge_x=-0.3,
+                            col=ifelse(nMutdf_sub$MOFA_outlier,patcols[nMutdf_sub$Patient.ID], "black")) + 
+  ylab("# mutations in IGHV genes")+ xlab("IGHV")+
+  theme(text = element_text(size=18)) +
+  guides(col=guide_legend(title="IGHV")) +coord_fixed(ratio = 0.1)
+gg_WES
+```
+
+# Arrange plots
+```{r IGHV_mismatch, fig.height=5, fig.width=10}
+gg_drug <- gg_drug + theme(axis.text.x=element_text(colour=c("red", patcols , "blue")))
+plot_grid(gg_drug +guides(col=F), gg_WES , labels = letters[1:2], nrow=1, rel_widths = c(1,1), label_size = 22)
+```
+
+# SessionInfo
+```{r}
+sessionInfo()
+```
+
