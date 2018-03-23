@@ -22,6 +22,8 @@ library(magrittr)
 library(Hmisc)
 library(cowplot)
 library(beeswarm)
+library(ggbeeswarm)
+library(ggpubr)
 ```
 
 # Get fitted model and related data
@@ -88,7 +90,7 @@ colors_agreemet <- c("agreement with label" = "darkgreen",
 
 #colors for heatmap annotations
 anno_colors<- list(IGHV_label = c("M"="red", "U"="blue", "missing" = "gray"),
-                   IGHV_predicted = c("M"="red", "U"="blue"),
+                   IGHV_predicted = c("M"="darkred", "U"="darkblue"),
                   agreement =colors_agreemet)
 ```
 
@@ -97,11 +99,19 @@ anno_colors<- list(IGHV_label = c("M"="red", "U"="blue", "missing" = "gray"),
 # use colors defined above
 col4bees <- anno_colors$agreement[df_clustering$agreement]
 
+gg_bees <- ggplot(df_clustering, aes(x=1,y=Z, col=agreement)) + geom_beeswarm(size=2) +
+  scale_color_manual(values=colors_agreemet) + 
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size=18))+
+  guides(col=F) + ylab("Factor 1")
+gg_bees
 # make plot
-par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
-bs <-beeswarm(df_clustering$Z, pwcol = col4bees, pch = 16,
-          ylab = paste("Factor", idx_ighv), xlab = "",
-          cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+# par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+# bs <-beeswarm(df_clustering$Z, pwcol = col4bees, pch = 16,
+          # ylab = paste("Factor", idx_ighv), xlab = "",
+          # cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
 ```
 
 
@@ -113,7 +123,7 @@ df_pie <- df_clustering %>%
   dplyr::summarize(value=length(patID))
 df_pie$agreement <- factor(df_pie$agreement, levels = rev(df_pie$agreement))
 
-gg_MOFA <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
+gg_pie <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
   geom_bar(stat="identity",width = 1)+
   coord_polar("y", start=0)+
   # scale_fill_brewer(palette="Dark2")+
@@ -124,11 +134,11 @@ gg_MOFA <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
         legend.position = "bottom",
         axis.text = element_blank(),
         axis.line = element_blank()) +
-  guides(fill=guide_legend(title="", ncol=1),
+  guides(fill=F,
          col=F) +
   geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=10) +
   scale_color_manual(values=colors_agreemet)
-gg_MOFA
+gg_pie
 ```
 
 # Heatmap of omic layers annotated with IGHV classification and Factor classification
@@ -142,10 +152,11 @@ df_clustering$IGHV_label <- df_clustering$IGHV
 ```{r HeatmapMeth_IGHV, fig.width = 5.6, fig.height = 4.9}
 methData <- data$Methylation
 methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
-pheatmap(cor(methData),
+methHm <- pheatmap(cor(methData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
          show_rownames = F, show_colnames = F, main = "Methylation",
-         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0
+         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
+        annotation_names_row=F
          )
 ```
 
@@ -153,7 +164,7 @@ pheatmap(cor(methData),
 ```{r Heatmap_legend, fig.width = 8, fig.height = 7}
 methData <- data$Methylation
 methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
-pheatmap(cor(methData),
+methHmLeg <- pheatmap(cor(methData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
          show_rownames = F, show_colnames = F, main = "Methylation",
          annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0
@@ -164,10 +175,11 @@ pheatmap(cor(methData),
 ```{r HeatmapDrugs_IGHV, fig.width = 5.6, fig.height = 4.9}
 drugData <- data$Drugs
 drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
-pheatmap(cor(drugData),
+drugHm <- pheatmap(cor(drugData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
          show_rownames = F, show_colnames = F, main = "Drug response",
-         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0
+         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
+        annotation_names_row=F
          )
 ```
 
@@ -175,11 +187,172 @@ pheatmap(cor(drugData),
 ```{r HeatmapRNAseq_IGHV, fig.width = 5.6, fig.height = 4.9}
 mRNAData <- data$mRNA
 mRNAData <- mRNAData[,apply(mRNAData,2, function(d) !all(is.na(d)))]
-pheatmap(cor(mRNAData),
+mRNAHm <- pheatmap(cor(mRNAData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
          show_rownames = F, show_colnames = F, main = "mRNA",
-         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0
+         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
+         annotation_names_row=F
          )
+```
+
+
+
+# Validation data
+Investigate the three outliers using new data.
+
+## Collect additional data on the samples
+```{r}
+# df for  patient id conversion
+load("~/Documents/cll/var/encPatientID_160218.RData")
+df_clustering$patID2 <- encPatientID$PatientID[match(as.character(df_clustering$patID), encPatientID$PatientID2)]
+
+# add extended meta data
+load("~/Documents/cll/var/patmeta_150609.RData")
+patmeta_all <- patmeta
+rm(patmeta)
+
+df_meta <- cbind(df_clustering, patmeta_all[as.character(df_clustering$patID2), grepl("IGHV|pat", colnames(patmeta_all))])
+
+# add mutation data
+df_meta <- cbind(df_meta,t(data$Mutations)[as.character(df_clustering$patID), colnames(t(data$Mutations))!=
+                                             "IGHV"])
+df_meta$agree <- ifelse(grepl("clustered",df_meta$agreement),0,ifelse(grepl("missing",df_meta$agreement), NA, 1))
+
+# collect discordant cases
+df_meta_dis <- filter(df_meta, agree==0)
+
+# outliers
+extremeCases <- filter(df_meta_dis,  abs(Z)>1)
+extremeCases$patID2
+```
+
+## Patient colors 
+```{r}
+ighv_colors <- c("M"="red", "U"="blue")
+patcols <- c("cornflowerblue", "coral2", "cyan3")
+names(patcols) <- c("P0108", "P0432", "P0437")
+```
+
+## Annotate beeswarm
+```{r}
+pos <- position_beeswarm()
+df_clustering %<>% mutate(outlier = patID2 %in%extremeCases$patID2)
+gg_bees <- ggplot(df_clustering, aes(x=1,y=Z, col=agreement, label=ifelse(outlier,patID2, NA))) + geom_point(size=2, position = pos) +
+  scale_color_manual(values=colors_agreemet) + 
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size=18))+
+  guides(col=F) + ylab("Factor 1") + 
+  ggrepel::geom_label_repel(cex=5, position=pos,
+                        col=ifelse(df_clustering$outlier,patcols[df_clustering$patID2], "black"),
+                        box.padding=4, point.padding=0.3, label.size=0)
+gg_bees
+```
+
+
+## New drug screen data.
+```{r}
+load("~/Documents/CLL/OtherData/CPS1000_180202.RData")
+
+# select drugs targeting the BCR pathway not previousy included
+unique(filter(pheno1000, Pathway %in% c("B-cell receptor"))$Drug)
+
+# only include patients that were considered for MOFA and the new drug
+pheno1000 <- as.data.frame(pheno1000) 
+pheno1000_sub <- filter(pheno1000, diagnosis=="CLL",
+                        patientID %in% df_clustering$patID2,
+                        Drug %in% c("ONO-4059"))
+length(unique(pheno1000_sub$patientID))
+
+# add information on IGHV and from MOFA
+pheno1000_sub %<>% mutate(patIDH = encPatientID[as.character(patientID),]$PatientID2)
+pheno1000_sub %<>% mutate(IGHV =IGHV[patIDH],
+                          ZIGHV =ZIGHV[patIDH],
+                          LF1 = Z[patIDH, idx_ighv],
+                          outlier=ifelse(patientID %in% extremeCases$patID2,T,F))
+pheno1000_sub %<>% filter(IGHV!="missing")
+
+# form groups based on IGHV status excluding the outiers
+pheno1000_sub %<>% mutate(id=ifelse(outlier, as.character(patientID), paste0(IGHV,"-CLL")))
+
+# use edge-corrected value of drug responses
+
+# summarize by mean if multiple samples present for a patient
+pheno1000_sub_sum <- pheno1000_sub %>% 
+  group_by(patIDH, Concentration, Drug, Target,Pathway,Unit, outlier, IGHV, id, LF1, ZIGHV) %>%
+  summarise(meanViab=mean(normVal.adj.sigm))
+
+#drug response curves
+ggplot(pheno1000_sub_sum, aes(x=Concentration, y=meanViab, col=IGHV, linetype=outlier, group=id, shape=id)) +
+  stat_summary(fun.y  = mean, geom = 'point')+ stat_summary(fun.data = mean_se, fun.args = list(mult=2)) +
+  stat_summary(fun.y = mean,geom="line")  +
+  facet_wrap(~Drug, scales = 'free_x')
+
+# boxplots
+gg_drug <- ggplot(pheno1000_sub_sum, aes(x=id, y=meanViab, col=IGHV, group=id)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(height=0, width=0.1, alpha=0.5)  +
+  facet_wrap(~Concentration, ncol=3, labeller = label_bquote(paste(.(as.character(Concentration)),mu,"M"))) + 
+  # facet_wrap(~Concentration, scales = 'free_x', ncol=5) +
+  scale_alpha_manual(values = c("TRUE"=1, "FALSE"=0.4)) +
+  scale_color_manual(values = ighv_colors) +
+  theme(text = element_text(size=18),
+        axis.text.x = element_text(angle = 60, vjust=1, hjust=1)) +
+  xlab("") + ylab("viability") +
+   theme(axis.text.x=element_text(colour=c("red", patcols , "blue")))
+gg_drug
+```
+
+## WES data
+```{r}
+# load data
+wes <- read.csv("~/Documents/CLL/OtherData/2017-09-25_wes_snv.csv", header = T)
+
+# count number of mutations in IGHV genes
+nMutdf <- wes %>%
+  group_by(hipoID) %>%
+  summarise(nMut = sum(grepl("IGHV", GENE)))
+
+# Add HipoID- Patient ID info and IGHV status
+load("~/Documents/CLL/OtherData/patmeta_180122.RData")
+ighv <- select(patMeta, c(IGHV.status, HIPO.ID, Patient.ID))
+ighv %<>% mutate(PatIDH = encPatientID[Patient.ID,]$PatientID2)
+nMutdf <- left_join(nMutdf, ighv, by=c("hipoID" = "HIPO.ID"))
+
+# Add MOFA annotations
+patZ <- rownames(Z)
+nMutdf_sub <- filter(nMutdf, PatIDH %in% patZ, !is.na(IGHV.status))
+nrow(nMutdf_sub)
+nMutdf_sub %<>% mutate(MOFA_outlier= ifelse(Patient.ID %in% c("P0108", "P0432", "P0437"),T, F),
+                       ZIGHV = ZIGHV[PatIDH])
+
+# Plot
+gg_WES <- ggplot(nMutdf_sub, aes(x=IGHV.status, y= nMut, label=Patient.ID)) +
+  ggbeeswarm::geom_beeswarm(aes(col=IGHV.status), alpha=0.5)+
+    scale_color_manual(values = ighv_colors) +
+   # scale_color_manual(values=c("TRUE"="red", "FALSE"="black"))
+  ggrepel::geom_text_repel(aes(label=ifelse(MOFA_outlier,Patient.ID, "")),
+                           box.padding=1, cex=5, nudge_x=-0.3,
+                            col=ifelse(nMutdf_sub$MOFA_outlier,patcols[nMutdf_sub$Patient.ID], "black")) + 
+  ylab("# mutations in IGHV genes")+ xlab("IGHV")+
+  theme(text = element_text(size=18)) +
+  xlab("IGHV-Label")+
+  guides(col=F)+#guide_legend(title="IGHV-label")) +
+    coord_fixed(ratio = 0.1)
+gg_WES
+```
+
+# Arrange plots
+```{r IGHV_mismatch, fig.height=15, fig.width=10}
+gg_drughm <- as_ggplot(drugHm$gtable)
+gg_methhm <- as_ggplot(methHm$gtable)
+gg_leg <- as_ggplot(methHmLeg$gtable$grobs[[6]]) + theme(plot.margin = margin(2,0,0,1,unit = "cm"))
+
+c1 <- plot_grid(gg_bees, gg_pie, gg_leg, labels= c("a","b",""), nrow=1, rel_widths = c(1,1,0.5), label_size = 18)
+c2 <- plot_grid(gg_drughm, gg_methhm, labels= c("c","d"), nrow=1, label_size = 18)
+c3 <- plot_grid(gg_drug +guides(col=F), gg_WES , labels = letters[5:6], nrow=1, rel_widths = c(1,1), label_size = 18)
+grid.arrange(c1,c2,c3, nrow=3)
 ```
 
 # SessionInfo
