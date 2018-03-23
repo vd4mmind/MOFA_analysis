@@ -136,7 +136,7 @@ gg_pie <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
         axis.line = element_blank()) +
   guides(fill=F,
          col=F) +
-  geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=10) +
+  geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=6) +
   scale_color_manual(values=colors_agreemet)
 gg_pie
 ```
@@ -244,9 +244,9 @@ gg_bees <- ggplot(df_clustering, aes(x=1,y=Z, col=agreement, label=ifelse(outlie
         axis.ticks.x = element_blank(),
         text = element_text(size=18))+
   guides(col=F) + ylab("Factor 1") + 
-  ggrepel::geom_label_repel(cex=5, position=pos,
+  ggrepel::geom_label_repel(cex=5, position=pos, fill=NA,
                         col=ifelse(df_clustering$outlier,patcols[df_clustering$patID2], "black"),
-                        box.padding=4, point.padding=0.3, label.size=0)
+                        box.padding=6, point.padding=0.3, label.size=0)
 gg_bees
 ```
 
@@ -328,7 +328,7 @@ nMutdf_sub %<>% mutate(MOFA_outlier= ifelse(Patient.ID %in% c("P0108", "P0432", 
                        ZIGHV = ZIGHV[PatIDH])
 
 # Plot
-gg_WES <- ggplot(nMutdf_sub, aes(x=IGHV.status, y= nMut, label=Patient.ID)) +
+gg_WES <- ggplot(nMutdf_sub, aes(x=paste0(IGHV.status, "-CLL"), y= nMut, label=Patient.ID)) +
   ggbeeswarm::geom_beeswarm(aes(col=IGHV.status), alpha=0.5)+
     scale_color_manual(values = ighv_colors) +
    # scale_color_manual(values=c("TRUE"="red", "FALSE"="black"))
@@ -337,22 +337,22 @@ gg_WES <- ggplot(nMutdf_sub, aes(x=IGHV.status, y= nMut, label=Patient.ID)) +
                             col=ifelse(nMutdf_sub$MOFA_outlier,patcols[nMutdf_sub$Patient.ID], "black")) + 
   ylab("# mutations in IGHV genes")+ xlab("IGHV")+
   theme(text = element_text(size=18)) +
-  xlab("IGHV-Label")+
+  xlab("")+
   guides(col=F)+#guide_legend(title="IGHV-label")) +
     coord_fixed(ratio = 0.1)
 gg_WES
 ```
 
 # Arrange plots
-```{r IGHV_mismatch, fig.height=15, fig.width=10}
+```{r IGHV_mismatch, fig.height=15, fig.width=12}
 gg_drughm <- as_ggplot(drugHm$gtable)
 gg_methhm <- as_ggplot(methHm$gtable)
 gg_leg <- as_ggplot(methHmLeg$gtable$grobs[[6]]) + theme(plot.margin = margin(2,0,0,1,unit = "cm"))
 
 c1 <- plot_grid(gg_bees, gg_pie, gg_leg, labels= c("a","b",""), nrow=1, rel_widths = c(1,1,0.5), label_size = 18)
 c2 <- plot_grid(gg_drughm, gg_methhm, labels= c("c","d"), nrow=1, label_size = 18)
-c3 <- plot_grid(gg_drug +guides(col=F), gg_WES , labels = letters[5:6], nrow=1, rel_widths = c(1,1), label_size = 18)
-grid.arrange(c1,c2,c3, nrow=3)
+c3 <- plot_grid(gg_drug +guides(col=F), gg_WES , labels = letters[5:6], nrow=1, rel_widths = c(1,1), label_size = 18, axis = "lb", align = "hv")
+plot_grid(c1,c2,c3, nrow=3, rel_heights = c(1.1,1,1.3))
 ```
 
 # SessionInfo
