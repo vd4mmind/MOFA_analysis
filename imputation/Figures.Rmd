@@ -21,7 +21,7 @@ library(grid)
 
 # I/O
 ```{r}
-source("../CLL_Analysis/plottingUtils.R")
+source("../CLL_Analysis/plotting_utils.R")
 knitr::opts_chunk$set(fig.path="figures/", dev=c("png", "pdf"))
 outDir <- "out/"
 ```
@@ -83,7 +83,7 @@ gg_summary_random <- gg_summary_random + geom_point()  +
   # ggtitle(paste("Values missing at random"))
 # gg_summary_random
 
-gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) + ylim(c(0.0075,0.02))
+gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) 
 
 # full cases
 gg_summary_full <-gg_summary_full +
@@ -101,6 +101,6 @@ gg_legend_sum <- get_legend(gg_legend_sum)
 
 # arrange all plots
 library(cowplot)
-plot_grid(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, rel_widths = c(10,10,3), labels=c("a","b",""))#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+plot_grid(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, rel_widths = c(10,10,3), labels=c("a","b",""), label_size = 18)#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
 ```
 
