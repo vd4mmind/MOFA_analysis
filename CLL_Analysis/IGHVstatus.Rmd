@@ -290,10 +290,10 @@ ggplot(pheno1000_sub_sum, aes(x=Concentration, y=meanViab, col=IGHV, linetype=ou
   facet_wrap(~Drug, scales = 'free_x')
 
 # boxplots
-gg_drug <- ggplot(pheno1000_sub_sum, aes(x=id, y=meanViab, col=IGHV, group=id)) +
+gg_drug <- ggplot(filter(pheno1000_sub_sum,Concentration!=2), aes(x=id, y=meanViab, col=IGHV, group=id)) +
   geom_boxplot(outlier.shape = NA) +
   geom_jitter(height=0, width=0.1, alpha=0.5)  +
-  facet_wrap(~Concentration, ncol=3, labeller = label_bquote(paste(.(as.character(Concentration)),mu,"M"))) + 
+  facet_wrap(~Concentration, ncol=2, labeller = label_bquote(paste(.(as.character(Concentration)),mu,"M"))) + 
   # facet_wrap(~Concentration, scales = 'free_x', ncol=5) +
   scale_alpha_manual(values = c("TRUE"=1, "FALSE"=0.4)) +
   scale_color_manual(values = ighv_colors) +
@@ -352,7 +352,10 @@ gg_leg <- as_ggplot(methHmLeg$gtable$grobs[[6]]) + theme(plot.margin = margin(2,
 c1 <- plot_grid(gg_bees, gg_pie, gg_leg, labels= c("a","b",""), nrow=1, rel_widths = c(1,1,0.5), label_size = 18)
 c2 <- plot_grid(gg_drughm, gg_methhm, labels= c("c","d"), nrow=1, label_size = 18)
 c3 <- plot_grid(gg_drug +guides(col=F), gg_WES , labels = letters[5:6], nrow=1, rel_widths = c(1,1), label_size = 18, axis = "lb", align = "hv")
+
+pdf(file.path(plotdir,"IGHV_mismatch.pdf"),height=15, width=12, useDingbats=F)
 plot_grid(c1,c2,c3, nrow=3, rel_heights = c(1.1,1,1.3))
+dev.off()
 ```
 
 # SessionInfo
