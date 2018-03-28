@@ -30,6 +30,7 @@ out_mofa <- "/Users/bvelten/Documents/MOFA/GFA_imputation_models/CLL/imputation/
 out_gfa <- "/Users/bvelten/Documents/MOFA/GFA_imputation_models/CLL/imputation/atRandom/gfa/"
 dataDir <-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/views/minView=all/"
 outdir <- "out/"
+if(!dir.exists(outdir)) dir.create(outdir)
 ```
 
 #Get MOFA models for imputation and masking parameters
@@ -70,14 +71,19 @@ all(names(ListMOFA)== names(ListGFA))
 
 # check the views have the same ordering: NO need to reorder
 all(rownames(ListGFA[[1]]$W) == Reduce(c,featureNames(ListMOFA[[1]])))
-which(!Reduce(c,featureNames(ListMOFA[[1]])) %in% rownames(ListGFA[[1]]$W))
-which(!rownames(ListGFA[[1]]$W) %in% Reduce(c,featureNames(ListMOFA[[1]])))
 
+idx_MOFA <- which(!Reduce(c,featureNames(ListMOFA[[1]])) %in% rownames(ListGFA[[1]]$W))
+idx_GFA <- which(!rownames(ListGFA[[1]]$W) %in% Reduce(c,featureNames(ListMOFA[[1]])))
+
+# different names (e.g. "." instead of "-")
+
+if(length(idx_MOFA)>0 | length(idx_GFA)>0){
 # change a name in MOFA
-rownames(ListGFA[[1]]$W)[61]
-(Reduce(c,featureNames(ListMOFA[[1]])))[9309]
+rownames(ListGFA[[1]]$W)[idx_GFA]
+(Reduce(c,featureNames(ListMOFA[[1]])))[idx_MOFA]
 for(i in seq_along(ListMOFA))
 featureNames(ListMOFA[[i]])$mut[featureNames(ListMOFA[[i]])$mut=="RP11-766F14.2"] <- "RP11.766F14.2"
+}
 
 # MOFA to GFA names mapping (should be the same for all models , but double-check)
 GFA_to_MOFA_feautres <- sapply(seq_along(ListMOFA), function(i) match(Reduce(c,featureNames(ListMOFA[[i]])), rownames(ListGFA[[i]]$W)))
