@@ -1,0 +1,123 @@
+---
+title: "MOFA: Assessment of the continuity of IGHV factor in the mRNA data"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r}
+library(MOFAtools)
+library(data.table)
+library(purrr)
+library(magrittr)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+```
+
+#Load base model
+```{r}
+load("../out_import_technical.RData")
+idx_ighv <- "1"
+```
+
+
+# Load models without mRNA data 
+```{r}
+#output path for plots
+plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/cont_IGHV/Figures"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+
+in.folder <- "~/Documents/MOFA/CLL_MOFA_data/out/continuity"
+
+files <- list.files(in.folder, pattern="model_noexpr.*\\.hdf5$")
+
+models <- lapply(files, function(fnm) loadModel(file.path(in.folder,fnm), sortFactors = T))
+```
+
+# Load patient  data
+```{r load_patient_meta, echo=FALSE}
+data(patmeta, package="PACEdata")
+patmeta <- patmeta[sampleNames(models[[1]]),] %>%
+  tibble::rownames_to_column("sample") %>%
+  as.data.table %>% .[,c("sample","IGHV","ConsClust")] %>%
+  setnames("IGHV","ighv_status") %>%
+  setnames("ConsClust","MethylationCluster")
+```
+
+# Get our clusters from base model and define colors
+```{r}
+set.seed(32180)
+ZMC <- kmeans(Z[,idx_ighv], 3, nstart=1000, iter.max = 1000)
+ZMC <- ZMC$cluster
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+ZMC <- as.data.table(ZMC, keep.rownames=TRUE) %>% setnames("rn", "sample")
+col4MC <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred", "missing"="gray")
+patmeta  %<>% merge(ZMC,by="sample") 
+```
+
+# Load mRNA data 
+```{r}
+exprData <- read.table("~/Documents/MOFA/CLL_MOFA_data/views/minView=2/mRNA.txt", header = T)
+
+# get gene annotations from ENSEMBL
+mRNA_file <- "~/Documents/BioMart/Hsapiens_genes_BioMart.75.txt"
+mRNA = read.csv(file=mRNA_file,header=T,sep="\t",stringsAsFactors=F)
+
+colnames(exprData) <- mRNA$symbol[match(colnames(exprData), mRNA$ens_id)]
+
+# Convert to data.table
+exprData <- exprData %>% as.data.table(keep.rownames=T) %>% 
+  setnames("rn","sample") %>%
+  melt(id.vars="sample", variable.name="gene", value.name="expr")
+```
+
+
+# Collect IGHV factor from the models (it is always factor 1)
+TO-DO: CHECK THE CORRELATION BETWEEN THE FACTOR AND IGHV STATUS
+```{r}
+ighv_factor <- list()
+for (i in 1:length(models)) {
+  tmp <- getFactors(models[[i]], factors="1", as.data.frame=T)
+  tmp$trial <- i
+  tmp %<>% merge(patmeta,by="sample")
+  # Align IGHV factors
+  fit <- glm(factor(tmp$ighv_status, levels=c("U", "M")) ~ tmp$value, family="binomial")
+  if(fit$coefficients[2]<0) tmp %<>% mutate(value = -value)
+  
+  set.seed(32180)
+  ZMC_sub <- kmeans(tmp$value, 3, nstart=1000, iter.max = 1000)
+  ZMC_sub <- ZMC_sub$cluster
+  ZMC_sub <- ifelse(ZMC_sub==1, "HZ", ifelse(ZMC_sub==2, "LZ", "IZ"))
+  tmp$ZMC_sub <- ZMC_sub
+  print(sum(tmp$ZMC_sub != tmp$ZMC))
+  
+  ighv_factor[[i]] <- tmp
+}
+ighv_factor <- rbindlist(ighv_factor) %>% .[,factor:=NULL]
+```
+
+
+# Scatterplot between IGHV factor and gene expression markers
+Only use one trial, as they are all very similar
+```{r}
+interesting_genes <- c("LPL","PLD1","ADAM29")
+# interesting_genes <- c("ZNF667","SEPT10","LPL","PLD1","CRY1","BCL7A","ADAM29","WNT9A")
+
+plist <- lapply(interesting_genes, function(x) {
+  tmp <- exprData[gene==x]
+  foo <- merge(tmp,ighv_factor,by="sample", allow.cartesian = T) %>% setnames("value","ighv_factor") 
+  
+  p <- ggplot(filter(foo, trial==1), aes(x=ighv_factor, y=expr, group=trial, shape=as.factor(trial))) +
+    geom_point(aes(color=ZMC), size=1.25) +
+    stat_smooth(method="lm") +
+    theme_bw() + ylab(x) +guides(color=F, shape=F)+
+    scale_color_manual(values = col4MC) +xlab("IGHV-Factor")
+  p
+})
+
+pdf(file.path(plotdir,"Cont_IGHV_noExpr.pdf"), width = 6, height = 2, useDingbats=F)
+grid.arrange(plist[[1]],plist[[2]],plist[[3]], ncol=3)
+# do.call(grid.arrange, plist)
+dev.off()
+```
