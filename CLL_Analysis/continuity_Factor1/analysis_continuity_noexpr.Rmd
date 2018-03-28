@@ -15,19 +15,23 @@ library(ggplot2)
 library(gridExtra)
 ```
 
+```{r}
+outdir <- "../out"
+plotdir <- "figures/"
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
+```
+
+
 #Load base model
 ```{r}
-load("../out_import_technical.RData")
+load(file.path(outdir,"out_import.RData"))
 idx_ighv <- "1"
 ```
 
 
 # Load models without mRNA data 
 ```{r}
-#output path for plots
-plotdir <- "~/Documents/MOFA/CLL_MOFA_data/Analysis/code4manuscript/cont_IGHV/Figures"
-if(!dir.exists(plotdir)) dir.create(plotdir)
-
+# needs to be adapted to output folder from the sh scripts
 in.folder <- "~/Documents/MOFA/CLL_MOFA_data/out/continuity"
 
 files <- list.files(in.folder, pattern="model_noexpr.*\\.hdf5$")
@@ -37,6 +41,8 @@ models <- lapply(files, function(fnm) loadModel(file.path(in.folder,fnm), sortFa
 
 # Load patient  data
 ```{r load_patient_meta, echo=FALSE}
+#from the original study Dietrich et al 2018 now at BloodCancerMultiOmics2017
+# data(patmeta, package="BloodCancerMultiOmics2017")
 data(patmeta, package="PACEdata")
 patmeta <- patmeta[sampleNames(models[[1]]),] %>%
   tibble::rownames_to_column("sample") %>%
@@ -74,7 +80,6 @@ exprData <- exprData %>% as.data.table(keep.rownames=T) %>%
 
 
 # Collect IGHV factor from the models (it is always factor 1)
-TO-DO: CHECK THE CORRELATION BETWEEN THE FACTOR AND IGHV STATUS
 ```{r}
 ighv_factor <- list()
 for (i in 1:length(models)) {
@@ -100,7 +105,7 @@ ighv_factor <- rbindlist(ighv_factor) %>% .[,factor:=NULL]
 
 # Scatterplot between IGHV factor and gene expression markers
 Only use one trial, as they are all very similar
-```{r}
+```{r figure_noExpr, fig.width = 6, fig.height = 2}
 interesting_genes <- c("LPL","PLD1","ADAM29")
 # interesting_genes <- c("ZNF667","SEPT10","LPL","PLD1","CRY1","BCL7A","ADAM29","WNT9A")
 
@@ -116,8 +121,11 @@ plist <- lapply(interesting_genes, function(x) {
   p
 })
 
-pdf(file.path(plotdir,"Cont_IGHV_noExpr.pdf"), width = 6, height = 2, useDingbats=F)
 grid.arrange(plist[[1]],plist[[2]],plist[[3]], ncol=3)
-# do.call(grid.arrange, plist)
-dev.off()
 ```
+
+#SessionInfo
+```{r}
+sessionInfo()
+```
+
