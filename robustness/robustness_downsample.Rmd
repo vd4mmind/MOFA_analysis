@@ -22,10 +22,13 @@ theme_fn <- function() {
 }
 ```
 
+```{r}
+out.folder <- "/homes/ricard/MOFA_CLL/robustness/out"
+```
+
 <!-- Load trained models -->
 ```{r}
-in.folder <- "/hps/nobackup/stegle/users/ricard/MOFA/robustness/results"
-# in.folder <- "/Users/ricard/data/robustness/results"
+in.folder <- "/hps/nobackup/stegle/users/ricard/MOFA/CLL/robustness/v2/results"
 files <- list.files(in.folder, pattern=".hdf5$")
 
 nsamples_downsampled <- seq(0,100,5)
@@ -79,13 +82,13 @@ p <- ggplot(tmp, aes(x=nsamples_downsampled, y=nfactors)) +
   theme_bw() + theme_fn()
 # print(p)
 
-pdf("/homes/ricard/MOFA_CLL/robustness/out/nfactors_downsample.pdf", width = 7.5, height = 5.5)
+pdf(paste0(out.folder,"/nfactors_downsample.pdf"), width = 7.5, height = 5.5)
 print(p)
 dev.off()
 ```
 
 <!-- Robustness of factors -->
-Plot correlation of downsampled factors to not downsampled factors
+Plot correlation between factors infered from a downsampled data and factors infered in a complete data set
 ```{r}
 
 tmp <- expand.grid(nsamples_downsampled,1:ntrials,1:ntrials,as.factor(1:10)) %>% as.data.table %>% setnames(c("nsamples_down","trial_true","trial_down","factor")) %>%
@@ -93,6 +96,7 @@ tmp <- expand.grid(nsamples_downsampled,1:ntrials,1:ntrials,as.factor(1:10)) %>%
 
 
 for (k in unique(tmp$factor)) {
+  print(k)
   for (n in names(models)) {
     print(n)
     for (i in 1:length(models[["0"]])) {
@@ -107,8 +111,8 @@ for (k in unique(tmp$factor)) {
   }
 }
 
-saveRDS(tmp, "/homes/ricard/MOFA_CLL/robustness/out/corfactors_downsample.rds")
-# tmp <- readRDS("/Users/ricard/MOFA_CLL/robustness/out/downsample/corfactors_downsample.rds")
+saveRDS(tmp, paste0(out.folder,"/corfactors_downsample.rds"))
+tmp <- readRDS(paste0(out.folder,"/corfactors_downsample.rds"))
 
 p <- ggplot(tmp, aes(x=nsamples_down, y=r, color=factor, group=factor)) +
   stat_summary(fun.y="mean", geom="line", size=1.25) +
@@ -126,10 +130,14 @@ p <- ggplot(tmp, aes(x=nsamples_down, y=r, color=factor, group=factor)) +
   )
 print(p)
 
-pdf("/homes/ricard/MOFA_CLL/robustness/out/corfactors_downsample.pdf", width = 7.5, height = 5.5)
-# pdf("/Users/ricard/MOFA_CLL/robustness/out/downsample/corfactors_downsample.pdf", width = 7.5, height = 5.5)
+
+pdf(paste0(out.folder,"/corfactors_downsample.pdf"), width = 7.5, height = 5.5)
 print(p)
 dev.off()
+```
+
+```{r}
+stop()
 ```
 
 <!-- Scatterplots -->

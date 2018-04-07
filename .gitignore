@@ -1,0 +1,13 @@
+# MAC
+*Icon*
+.DS_Store
+
+# MOFA models
+*.hdf5
+
+# R Data
+*.RData
+*.rds
+
+# PDF files
+*.pdf

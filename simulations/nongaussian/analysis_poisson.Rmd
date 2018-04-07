@@ -7,7 +7,7 @@ output:
 
 ```{r}
 devtools::load_all("/Users/ricard/mofa/MOFAtools")
-library(MOFAtools)
+# library(MOFAtools)
 library(data.table)
 library(purrr)
 library(ggplot2)
@@ -37,7 +37,8 @@ theme_fn <- function() {
 <!-- Load poisson and gaussian models trained on count data -->
 ```{r}
 
-in.folder <- "/Users/ricard/data/MOFA/simulations/10Aug/results/nongaussian/poisson"
+in.folder <- "/Users/ricard/data/MOFA/simulations/results/nongaussian/poisson"
+out.dir <- "/Users/ricard/MOFA_CLL/simulations/nongaussian/out/poisson"
 
 # Load poisson models
 files <- list.files(in.folder, pattern="^poisson")
@@ -75,7 +76,6 @@ gaussian_dt <- data.table(
 dt <- rbind(poisson_dt,gaussian_dt) %>% 
   .[,k:=k-1] %>%  # To account for the constant covariate that learns the mean
   .[,likelihood:=factor(likelihood, levels=c("Poisson","Gaussian"))]
-
 ```
 
 <!-- Compare Evidence lower bound -->
@@ -87,7 +87,7 @@ p1 <- ggplot(dt, aes(x=likelihood, y=-log(-elbo))) +
   theme_fn()
 print(p1)
 
-pdf("/Users/ricard/CLL/simulations/nongaussian/out/poisson/poisson_elbo.pdf", width=7, height=5, useDingbats = F)
+pdf(paste0(out.dir, "/poisson_elbo.pdf"), width=7, height=5, useDingbats = F)
 print(p1)
 dev.off()
 ```
@@ -102,35 +102,73 @@ p2 <- ggplot(dt, aes(x=likelihood, y=k)) +
   theme_fn()
 print(p2)
 
-pdf("/Users/ricard/CLL/simulations/nongaussian/out/poisson/poisson_nfactors.pdf", width=7, height=5)
+pdf(paste0(out.dir, "/poisson_nfactors.pdf"), width=7, height=5, useDingbats = F)
 print(p2)
 dev.off()
 ```
 
-<!-- Compare reconstruction error -->
+Coloured by ELLBO
+```{r}
+# poisson likelihood
+dt_filt <- dt[likelihood=="Poisson"]
+p1 <- ggplot(dt_filt, aes(x=likelihood, y=k)) +
+  geom_bar(aes(group = trial, fill=elbo), position = "dodge", stat="identity", color="black") +
+  geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
+  labs(x="", y="Number of infered factors") +
+  scale_y_continuous(limits=c(0,13), breaks=c(5,10)) +
+  scale_fill_gradient(low="darkred", high="red") +
+  theme_fn() +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=11)
+  )
+print(p1)
 
-TO-DO: REPLACE THIS BY THE NEW PREDICT FUNCTION
+pdf(paste0(out.dir, "/poisson_nfactors_elbo.pdf"), width=7, height=5, useDingbats = F)
+print(p1)
+dev.off()
+
+# Gaussian likelihood
+dt_filt <- dt[likelihood=="Gaussian"]
+p2 <- ggplot(dt_filt, aes(x=likelihood, y=k)) +
+  geom_bar(aes(group = trial, fill=elbo), position = "dodge", stat="identity", color="black") +
+  geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
+  labs(x="", y="Number of infered factors") +
+  scale_y_continuous(limits=c(0,13), breaks=c(5,10)) +
+  scale_fill_gradient(low="cornflowerblue", high="blue") +
+  theme_fn() +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=11)
+  )
+print(p2)
+
+pdf(paste0(out.dir, "/gaussian_nfactors_elbo.pdf"), width=7, height=5, useDingbats = F)
+print(p2)
+dev.off()
+```
+
+
+<!-- Compare reconstruction error -->
 ```{r}
 sigmoid <- function(x) 1/(1+exp(-x))
 
 dt[,mse:=Inf]
 for (i in 1:length(gaussian_models)) {
-  Y <- getTrainData(gaussian_models[[i]], views="0")
-  Z <- getFactors(gaussian_models[[i]], include_intercept = T)
-  SW <- getWeights(gaussian_models[[i]], views="0")
-  Ypred_gaussian <- t(Z %*% t(SW))
+  Y <- getTrainData(gaussian_models[[i]], views="0")[[1]]
+  Ypred_gaussian <- predict(gaussian_models[[i]])[[1]]
   mse_gaussian <- mean((Ypred_gaussian - Y)**2)
   dt[likelihood=="Gaussian" & trial==i-1, mse:=mse_gaussian]
 }
 for (i in 1:length(poisson_models)) {
-  Y <- getTrainData(poisson_models[[i]], views="0")
-  Z <- getFactors(poisson_models[[i]], include_intercept = T)
-  SW <- getWeights(poisson_models[[i]], views="0")
-  Ypred_poisson <- log(1 + exp(t(Z %*% t(SW))))
+  Y <- getTrainData(poisson_models[[i]], views="0")[[1]]
+  # Ypred_poisson <- log(1 + exp(t(Z %*% t(SW))))
+  Ypred_poisson <- predict(poisson_models[[i]])[[1]]
   mse_poisson <- mean((Ypred_poisson - Y)**2)
   dt[likelihood=="Poisson" & trial==i-1, mse:=mse_poisson]
 }
-dt[,likelihood:=factor(likelihood, levels=c("Poisson","Gaussian"))]
 
 # Plot reconstruction error
 p3 <- ggplot(dt, aes(x=likelihood, y=mse)) +
@@ -140,30 +178,30 @@ p3 <- ggplot(dt, aes(x=likelihood, y=mse)) +
   theme_fn()
 print(p3)
 
-pdf("/Users/ricard/CLL/simulations/nongaussian/out/poisson/poisson_mse.pdf", width=7, height=5, useDingbats = F)
+pdf(paste0(out.dir, "/poisson_mse.pdf"), width=7, height=5, useDingbats = F)
 print(p3)
 dev.off()
 ```
 
+
 <!-- Compare distributions of reconstructed data -->
 ```{r}
 
-dt_truth <- getTrainData(poisson_models[[1]])[["0"]] %>% as.data.table %>% melt() %>% .[,likelihood:="Truth"]
+# dt_truth <- getTrainData(poisson_models[[1]])[["0"]] %>% as.data.table %>% melt() %>% .[,likelihood:="Truth"]
 
 Z <- getFactors(poisson_models[[1]], include_intercept = T)
-SW <- getWeights(poisson_models[[1]], views="0")
+SW <- getWeights(poisson_models[[1]], views="0")[[1]]
 dt_poisson <- log(1 + exp(t(Z %*% t(SW)))) %>% as.data.table %>% melt() %>% .[,likelihood:="Poisson"]
 
 Z <- getFactors(gaussian_models[[1]], include_intercept = T)
-SW <- getWeights(gaussian_models[[1]], views="0")
+SW <- getWeights(gaussian_models[[1]], views="0")[[1]]
 dt_gaussian <- t(Z %*% t(SW)) %>% as.data.table %>% melt() %>% .[,likelihood:="Gaussian"]
 
-dt <- rbind(dt_gaussian, dt_poisson)
-dt[,likelihood:=factor(likelihood, levels=c("Poisson","Gaussian"))]
+dt <- rbind(dt_poisson, dt_gaussian)
 
-p4 <- ggplot(dt, aes(x=value, group=likelihood, fill=likelihood)) +
-  geom_histogram(aes(y=..density..), alpha=0.75, binwidth=0.2) +
-  xlim(c(-3,7)) +
+p <- ggplot(dt, aes(x=value, group=likelihood, fill=likelihood)) +
+  geom_histogram(aes(y=..density..), alpha=0.75, binwidth=0.05) +
+  xlim(c(-2.5,6)) +
   labs(x="", y="Density") +
   theme_bw() +
   theme(
@@ -178,20 +216,60 @@ p4 <- ggplot(dt, aes(x=value, group=likelihood, fill=likelihood)) +
     legend.text = element_text(size=rel(1.25)),
     legend.title = element_text(size=rel(1.5))
   )
-print(p4)
+print(p)
 
-pdf("/Users/ricard/CLL/simulations/nongaussian/out/poisson/poisson_dist.pdf", width=6, height=4)
-print(p4)
+pdf(paste0(out.dir, "/poisson_dist.pdf"), width=6, height=4, useDingbats = F)
+print(p)
 dev.off()
 ```
 
 <!-- <!-- Joint plot --> -->
 <!-- ```{r} -->
-
 <!-- p <- cowplot::plot_grid(plotlist = list(p1,p2,p3,p4), ncol = 2, nrow = 2) -->
 <!-- print(p) -->
-
 <!-- pdf("/Users/ricard/CLL/simulations/nongaussian/out/poisson/poisson_all.pdf", width=6, height=4) -->
 <!-- print(p) -->
 <!-- dev.off() -->
 <!-- ``` -->
+
+
+<!-- (IGNORE) True variance explained per factor -->
+```{r}
+in.folder <- "/Users/ricard/data/MOFA/simulations/data/nongaussian/poisson"
+
+M <- 3
+ntrials <- 25
+
+trials <- as.character(0:(ntrials-1))
+views <- as.character(0:(M-1))
+
+Z <- W <- F <- lapply(trials, function(x) NULL)
+for (i in trials) {
+  W[[i]] < list()
+  F[[i]] < list()
+  Z[[i]] <- fread(sprintf("%s/trial%s_Z.txt", in.folder,i)) %>% as.matrix
+  for (m in views) {
+    W[[i]][[m]] <- fread(sprintf("%s/trial%s_%s_W.txt", in.folder,i,m)) %>% as.matrix
+    F[[i]][[m]] <- fread(sprintf("%s/trial%s_%s_F.txt", in.folder,i,m)) %>% as.matrix
+  }
+}
+
+r2 <- sapply(trials, function(x) NULL)
+foo <- sapply(trials, function(x) NULL)
+for (i in trials) {
+  r2[[i]] <- data.frame(NA,M,ncol(Z[[i]]))
+  colnames(r2[[i]]) <- views
+  for (m in views) {
+    # SS <- sum((F[[i]] %*% t(W[[i]][[m]]))**2)
+    for (k in 1:ncol(Z[[i]])) {
+      Ypred <- Z[[i]][,k] %*% t(W[[i]][[m]][,k])
+      r2[[i]][m,k] <- 1 - (sum((F[[i]][[m]] - Ypred)**2) / sum(F[[i]][[m]]**2) )
+    }
+  }
+  foo[i] <- min(apply(r2[[i]],2,max))
+}
+
+min(unlist(foo))
+
+```
+
