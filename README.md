@@ -12,7 +12,10 @@ Content
 -------
 * `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data.
 
-    * `/pre-processing/`: Script to pre-process data for input to MOFA
+    * `/pre-processing/`: Scripts to pre-process data for input to MOFA
+    * `/imputation/`: Scripts for imputation analysis
+    * `/robustness/`: Scripts for robustness analysis
+    * `/continuity_Factor1/`: characterisation of the continous IGHV phenotype
     
     1) import_models.Rmd [html](CLL_Analysis/import_models.html)
         * imports .hdf5 model files produced by mofa in Python
@@ -26,39 +29,37 @@ Content
         * Code for Figure 2 (Factor overview)
 
     4) Factor1.Rmd  [html](CLL_Analysis/Factor1.html)
-        * Code to charatcerize Factor 1 (Figure 3)
+        * Code to characterize Factor 1 (Figure 3)
     
     5) IGHVstatus.Rmd  [html](CLL_Analysis/IGHVstatus.html)
         * Code to compare IGHV groups with 2 groups based on Factor 1
         
     6) Factor3.Rmd  [html](CLL_Analysis/Factor3.html)
-        * Code to charatcerize Factor 3
+        * Code to characterize Factor 3
     
     7) Factor4.Rmd  [html](CLL_Analysis/Factor4.html)
-        * Code to charatcerize Factor 4
+        * Code to characterize Factor 4
         
+    7) Factor5.Rmd  [html](CLL_Analysis/Factor5.html)
+        * Code to characterize Factor 5
+
+    7) Factor7.Rmd  [html](CLL_Analysis/Factor7.html)
+        * Code to characterize Factor 7
+
     8) Factor8.Rmd  [html](CLL_Analysis/Factor8.html)
-        * Code to charatcerize Factor 8
+        * Code to characterize Factor 8
     
     9) survival.Rmd  [html](CLL_Analysis/survival.html)
         * Code for Figure 4 and supplementary figres for survival prediction
 
+* `/scMT_Analysis/`: contains all scripts analysing the MOFA model on the scMT data.
+    1) mofa_scMT.Rmd  [html](CLL_Analysis/survival.html)
+        * Code for Figure 5 and all supplementary figures related to the scMT data
 
-* `/continuity/`: characterisation of the continous IGHV phenotype
-* `/downsampling/`: downsampling analysis
-* `/iCluster/`: comparison with iCluster
-* `/imputation/`: assessment of imputation (on the drug response data of the CLL study)
-* `/pretreatment_factor/`: characterisation of Factor 7 (associated to preatreatment)
-* `/robustness/`: analysis of the robustness of the mode
-* `/run_mofa/`: template scripts to run MOFA
-* `/scalability/`: scalability analysis of MOFA, GFA and iCluster
-* `/simulations/`: assessment of technical capabilities of MOFA on simulated data
-* `/sparsity/`: assessment of sparsity priors
-* `/stress_factor/`: characterisation of Factor 5 (associated to oxidative stress response)
+* `/model_validation/`: simulations for model validation
+    * `/learnK/`: estimating the true number of factors under different dimensionality settings
+    * `/nongaussian/`: assessing of non-gaussian likelihoods
 
-Data
--------
- The data directory contains annotations used from ENSEMLBE for the gene expression data as well as the fitted MOFA models used for the main analysis.
 
 Contact
 -------
