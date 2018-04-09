@@ -1,11 +1,17 @@
-MultiOmics Factor Analysis disentangles heterogeneity in blood cancer
+Multi-Omics factor analysis - a framework for unsupervised integration of multi-omic data sets
 =========
 
-Source code of the manuscript ***MultiOmics Factor Analysis disentangles heterogeneity in blood cancer*** ([bioRxiv](https://www.biorxiv.org/content/early/2017/11/10/217554)).
+Source code to reproduce the figures of the manuscript ***MultiOmics Factor Analysis disentangles heterogeneity in blood cancer*** ([bioRxiv](https://www.biorxiv.org/content/early/2017/11/10/217554)).  
+
+If you want to use MOFA, [here](https://github.com/bioFAM/MOFA) is the github repository.
 
 Abstract
 --------
-Multi-omic studies in large cohorts promise to characterize biological processes across molecular layers including genome, transcriptome, epigenome, proteome and perturbation phenotypes. However, methods for integrating multi-omic datasets are lacking. We present Multi-Omics Factor Analysis (MOFA), an unsupervised dimensionality reduction method for discovering the driving sources of variation in multi-omics data. Our model infers a set of (hidden) factors that capture biological and technical sources of variability across data modalities. We applied MOFA to data from 200 patient samples of chronic lymphocytic leukemia (CLL) profiled for somatic mutations, RNA expression, DNA methylation and ex-vivo responses to a panel of drugs. MOFA automatically discovered the known dimensions of disease heterogeneity, including immunoglobulin heavy chain variable region (IGHV) status and trisomy of chromosome 12, as well as previously underappreciated drivers of variation, such as response to oxidative stress. These factors capture key dimensions of patient heterogeneity, including those linked to clinical outcomes. Finally, MOFA handles missing data modalities in subsets of samples, enabling imputation, and the model can identify outlier samples.
+Multi-omic studies promise the improved characterization of biological processes across molecular layers. However, methods for the unsupervised integration of the resulting heterogeneous datasets are lacking. We present Multi-Omics Factor Analysis (MOFA), a computational method for discovering the principal sources of variation in multi-omic datasets. MOFA infers a set of (hidden) factors that capture biological and technical sources of variability. It disentangles axes of heterogeneity that are shared across multiple modalities and those specific to individual data modalities. The learnt factors enable a variety of downstream analyses, including identification of sample subgroups, data imputation, and the detection of outlier samples. We applied MOFA to a cohort of 200 patient samples of chronic lymphocytic leukaemia, profiled for somatic mutations, RNA expression, DNA methylation and ex-vivo drug responses. MOFA identified major dimensions of disease heterogeneity, including immunoglobulin heavy chain variable region status, trisomy of chromosome 12 and previously underappreciated drivers, such as response to oxidative stress. In a second application, we used MOFA to analyse single-cell multiomics data, identifying coordinated transcriptional and epigenetic changes along cell differentiation.
+
+<p align="center"> 
+<img src="https://github.com/bioFAM/MOFA/blob/master/images/logo.png" style="width: 50%; height: 50%"/>​
+</p>
 
 
 Content
@@ -50,7 +56,7 @@ Content
         * Code to characterize Factor 8
     
     9) survival.Rmd  [html](CLL_Analysis/survival.html)
-        * Code for Figure 4 and supplementary figres for survival prediction
+        * Code for Figure 4 and supplementary figures for survival prediction
 
 * `/scMT_Analysis/`: contains all scripts analysing the MOFA model on the scMT data.
     1) mofa_scMT.Rmd  [html](CLL_Analysis/survival.html)
