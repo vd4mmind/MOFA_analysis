@@ -1,1 +1,0 @@
-(b) Rank distribution of the scaled absolute loadings in the mRNA view. Selected top genes are highlighted

@@ -1,0 +1,139 @@
+---
+title: "Compare imputation performance"
+author: "Britta Velten"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(data.table)
+library(ggplot2)
+```
+
+
+# Source script performing imputations
+```{r}
+source("Impute.R")
+```
+
+
+#In/Out options and define setting
+The directories shoudl point to the directories where the GFA and MOFA fits are stored and to the directory of the (unmasked) data.
+```{r}
+out_mofa <- "/Users/bvelten/Documents/MOFA/GFA_imputation_models/CLL/imputation/atRandom/mofa/k10/"
+out_gfa <- "/Users/bvelten/Documents/MOFA/GFA_imputation_models/CLL/imputation/atRandom/gfa/"
+dataDir <-"/Users/bvelten/Documents/MOFA/CLL_MOFA_data/views/minView=all/"
+outdir <- "out/"
+if(!dir.exists(outdir)) dir.create(outdir)
+```
+
+#Get MOFA models for imputation and masking parameters
+```{r}
+MOFAfiles <- list.files(out_mofa)
+ListMOFA <- lapply(MOFAfiles[grepl(".hdf5",MOFAfiles)], function(run) loadModel(file.path(out_mofa, run)))
+
+# check number of factors
+sapply(seq_along(ListMOFA), function(i) getDimensions(ListMOFA[[i]])$K)
+
+# name models
+names(ListMOFA) <- gsub(".hdf5", "",MOFAfiles[grepl(".hdf5",MOFAfiles)])
+
+# collect experiment infos in dataframe
+run<-sapply(strsplit(MOFAfiles, "_"), function(l) sub(".rds","",l[3]))
+ELB <- sapply(ListMOFA, function(model) max(model@TrainStats$elbo, na.rm = T))
+missing <- sapply(ListMOFA, function(m) sum(is.na(m@TrainData$viab))/prod(dim(m@TrainData$viab)))
+labelmissing <- sapply(strsplit(names(missing), "_"), function(l) l[1])
+df <- data.frame(true=missing, name = names(missing), label=labelmissing, run=run)
+rownames(df) <-NULL
+head(df)
+```
+
+#Get GFA models for imputation
+```{r}
+GFAfiles <- list.files(out_gfa)
+ListGFA <- lapply(GFAfiles[grepl(".rds",GFAfiles)], function(run) readRDS(file.path(out_gfa, run)))
+names(ListGFA) <- gsub(".rds", "",GFAfiles[grepl(".rds",GFAfiles)])
+
+# check number of factors
+sapply(ListGFA, function(m) ncol(m$X))
+
+# only include settings where mofa and gfa were fit
+commonModels <- intersect(names(ListMOFA), names(ListGFA) )
+ListMOFA <- ListMOFA[commonModels]
+ListGFA <- ListGFA[commonModels]
+all(names(ListMOFA)== names(ListGFA))
+
+# check the views have the same ordering: NO need to reorder
+all(rownames(ListGFA[[1]]$W) == Reduce(c,featureNames(ListMOFA[[1]])))
+
+idx_MOFA <- which(!Reduce(c,featureNames(ListMOFA[[1]])) %in% rownames(ListGFA[[1]]$W))
+idx_GFA <- which(!rownames(ListGFA[[1]]$W) %in% Reduce(c,featureNames(ListMOFA[[1]])))
+
+# different names (e.g. "." instead of "-")
+
+if(length(idx_MOFA)>0 | length(idx_GFA)>0){
+# change a name in MOFA
+rownames(ListGFA[[1]]$W)[idx_GFA]
+(Reduce(c,featureNames(ListMOFA[[1]])))[idx_MOFA]
+for(i in seq_along(ListMOFA))
+featureNames(ListMOFA[[i]])$mut[featureNames(ListMOFA[[i]])$mut=="RP11-766F14.2"] <- "RP11.766F14.2"
+}
+
+# MOFA to GFA names mapping (should be the same for all models , but double-check)
+GFA_to_MOFA_feautres <- sapply(seq_along(ListMOFA), function(i) match(Reduce(c,featureNames(ListMOFA[[i]])), rownames(ListGFA[[i]]$W)))
+all(apply(GFA_to_MOFA_feautres,1, function(r) length(unique(r))==1))                           
+
+GFA_to_MOFA_feautres <- GFA_to_MOFA_feautres[,1]
+any(is.na(GFA_to_MOFA_feautres))
+```
+
+#Get true data
+```{r}
+views <- names(ListMOFA[[1]]@TrainData)
+allData <- paste(views, ".txt", sep="")
+DataList <- lapply(allData, function(file) read.table(file.path(dataDir, file)))
+names(DataList) <- views
+rownames(DataList[[2]])==sampleNames(ListMOFA[[1]])
+rownames(DataList[[2]])==rownames(ListGFA[[1]]$X)
+DataList_scaled <- lapply(DataList, function(dd) scale(dd,center=TRUE, scale=FALSE))
+```
+
+
+#Impute
+
+## Using all views
+Impute and evaluate imputations
+```{r}
+  imp_results <- lapply(names(ListMOFA), function(modelnm){
+  print(modelnm)
+  mofa.tmp <- ListMOFA[[modelnm]]
+  gfa.tmp <- ListGFA[[modelnm]]
+  imp.out <- ImputeComparison(mofa.tmp, gfa.tmp, DataList_scaled, GFA_to_MOFA_feautres)
+  imp.out$MSEdf$modelName <- modelnm
+  imp.out
+}) 
+names(imp_results) <- names(ListMOFA)
+benchmark_results<-lapply(names(imp_results), function(impnm) {
+  dftmp <- imp_results[[impnm]]$MSEdf
+  dftmp$param_PercNA <- filter(df, name==impnm)$label
+  dftmp$run <- filter(df, name==impnm)$run
+  dftmp
+}
+  ) %>% bind_rows()
+benchmark_results$ELB <- ELB[benchmark_results$modelName]
+
+# save imputation results
+save(benchmark_results, file=file.path(outdir,"imputation_random_drug_k10.RData"))
+```
+
+# SessionInfo
+```{r}
+sessionInfo()
+```
+

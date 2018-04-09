@@ -10,7 +10,10 @@ Multi-omic studies in large cohorts promise to characterize biological processes
 
 Content
 -------
-* `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data. In the 
+* `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data.
+
+    * `/pre-processing/`: Script to pre-process data for input to MOFA
+    
     1) import_models.Rmd [html](CLL_Analysis/import_models.html)
         * imports .hdf5 model files produced by mofa in Python
         * tests robustness across initializations, picks a model based on ELBO for further analysis and checks the factors' correlation
@@ -22,14 +25,23 @@ Content
     3) MOFAfactors_overview.Rmd  [html](CLL_Analysis/MOFAfactors_overview.html)
         * Code for Figure 2 (Factor overview)
 
-    4) Analysis_Factor1.Rmd  [html](CLL_Analysis/Analysis_Factor1.html)
+    4) Factor1.Rmd  [html](CLL_Analysis/Factor1.html)
         * Code to charatcerize Factor 1 (Figure 3)
     
     5) IGHVstatus.Rmd  [html](CLL_Analysis/IGHVstatus.html)
         * Code to compare IGHV groups with 2 groups based on Factor 1
+        
+    6) Factor3.Rmd  [html](CLL_Analysis/Factor3.html)
+        * Code to charatcerize Factor 3
     
-    6) survival.Rmd  [html](CLL_Analysis/CLL_Analysis/survival.html)
-        * Code for Figure 4 and S14 (survival prediction)
+    7) Factor4.Rmd  [html](CLL_Analysis/Factor4.html)
+        * Code to charatcerize Factor 4
+        
+    8) Factor8.Rmd  [html](CLL_Analysis/Factor8.html)
+        * Code to charatcerize Factor 8
+    
+    9) survival.Rmd  [html](CLL_Analysis/survival.html)
+        * Code for Figure 4 and supplementary figres for survival prediction
 
 
 * `/continuity/`: characterisation of the continous IGHV phenotype
@@ -39,7 +51,7 @@ Content
 * `/pretreatment_factor/`: characterisation of Factor 7 (associated to preatreatment)
 * `/robustness/`: analysis of the robustness of the mode
 * `/run_mofa/`: template scripts to run MOFA
-* `/scalability/`: scalability analysis of MOFA
+* `/scalability/`: scalability analysis of MOFA, GFA and iCluster
 * `/simulations/`: assessment of technical capabilities of MOFA on simulated data
 * `/sparsity/`: assessment of sparsity priors
 * `/stress_factor/`: characterisation of Factor 5 (associated to oxidative stress response)

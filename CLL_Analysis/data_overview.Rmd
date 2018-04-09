@@ -1,13 +1,13 @@
 ---
 title: "Overview CLL data used for MOFA"
 author: "Britta Velten"
-date: "28/06/2017"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
 output:
   BiocStyle::html_document:
     toc: true
 ---
 # Introduction
-This script provides an overview of the data used as input for the MOFA model.
+This script provides an overview of the data used as input for the MOFA model in the CLL study. The raw data from the original study (Dietrich, Oles, Lu et al (JCI, 2017)) is available [here](http://pace.embl.de).
 
 ```{r, warning=FALSE, message=FALSE}
 library(MOFAtools)
@@ -18,11 +18,16 @@ library(reshape2)
 library(gridExtra)
 ```
 
+# Output directory
+```{r}
+plotdir <- "figures/data_overview/"
+if(!dir.exists(plotdir)) dir.create(plotdir)
+knitr::opts_chunk$set(fig.path=plotdir, dev=c("png", "pdf"))
+```
+
 # Load data
 ```{r}
 data("CLL_data", package = "MOFAtools")
-plotdir <- "figures/data_overview"
-if(!dir.exists(plotdir)) dir.create(plotdir)
 
 # re-name
 names(CLL_data)[grepl("Drugs", names(CLL_data))] <- "Drug response"
@@ -66,9 +71,8 @@ names(cols4omics) <- c("Mutations", "Methylation", "Drug response", "mRNA")
 
 
 # Make tile plot
-```{r, fig.width = 5, fig.height = 5}
-# pdf(file.path(plotdir, "tile_cll.pdf"), width = 5, height = 5)
-
+(Now part of MOFAtools package using 'plotTilesData' function.)
+```{r tile_cll, fig.width = 5, fig.height = 5}
 # y-axis label
 molten_ovw %<>% mutate(omic_label = paste(omic, ptotal, sep="\n"))
 
@@ -88,8 +92,6 @@ gg1 <- ggplot(molten_ovw, aes(x=PatID, y=omic_label, fill=combi, width=0.7, heig
   geom_text(data=filter(molten_ovw, PatID=="H024"),aes(x=70,label=ntotal), size=6)
 
 gg1
-
-# dev.off()
 ```
 
 # SessionInfo

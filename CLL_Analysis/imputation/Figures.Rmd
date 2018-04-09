@@ -1,0 +1,106 @@
+---
+title: "Imputation_Figure"
+author: "Britta Velten"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(data.table)
+library(ggplot2)
+library(magrittr)
+library(gridExtra)
+library(grid)
+```
+
+# I/O
+```{r}
+source("../CLL_Analysis/plotting_utils.R")
+knitr::opts_chunk$set(fig.path="figures/", dev=c("png", "pdf"))
+outDir <- "out/"
+```
+
+# Get results from imputation
+```{r}
+# # complete cases
+load(file.path(outDir,"imputation_full_drug_k10.RData"))
+benchmark_results_full <- benchmark_results
+
+# at random
+load(file.path(outDir,"imputation_random_drug_k10.RData"))
+benchmark_results_random <- benchmark_results
+
+# joint list
+results <- list(random = benchmark_results_random, full = benchmark_results_full)
+rm(benchmark_results)
+```
+
+# Summarize results
+```{r}
+# collect results
+results_small <- lapply(results, function(df) {
+  # take out imp_kNN_featurewise
+  df <- filter(df,method!="imp_kNN_featurewise")
+  df$method <- as.character(df$method)
+  df[df$method =="imp_kNN_samplewise",]$method <- "kNN"
+  df
+  })
+
+# summarize results across runs
+summaries <- lapply(names(results_small), function(dfnm){
+  df <- results_small[[dfnm]]
+  if(dfnm=="full") df %<>% group_by(method, FullCasesMissing.viab)
+      else df %<>% group_by(method, pNA.viab)
+  summaryDF <- df %>% dplyr::summarize(mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
+  summaryDF$se <- summaryDF$sd/sqrt(summaryDF$n)
+  summaryDF
+  #take out guess (use Mean as baseline)
+  summaryDF %<>% filter(method!="Guess")
+})
+names(summaries) <- names(results_small)
+``` 
+
+# Plots
+```{r Imputation_figure, fig.width=10, fig.height=5}
+# random
+gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method))# + ylim(c(0.0075,0.02))
+
+gg_summary_random <- gg_summary_random + geom_point()  + 
+  xlab("Precentage of values missing") + ylab("Mean Squared Error") +
+  geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
+  geom_line() +
+  guides(col=F)+
+  theme_bw(base_size=18) +
+  theme(plot.title = element_text(size=rel(1)),
+        axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black"))#+
+  # ggtitle(paste("Values missing at random"))
+# gg_summary_random
+
+gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) 
+
+# full cases
+gg_summary_full <-gg_summary_full +
+    geom_errorbar(aes(ymin=mean_MSE-2*se, ymax=mean_MSE +2*se), width=1) +
+    geom_line() +guides(col=F) + theme_bw(base_size=18)+
+    theme(plot.title = element_text(size=rel(1)),
+          axis.title= element_text(size=rel(0.85)),
+        axis.text = element_text(color="black")) +
+    geom_point()  +xlab("Number of patients missing (out of n=121)") +
+    ylab("") #+ ggtitle(paste("Patients missing all measurements"))
+
+# legend
+gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
+gg_legend_sum <- get_legend(gg_legend_sum)
+
+# arrange all plots
+library(cowplot)
+plot_grid(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, rel_widths = c(10,10,3), labels=c("a","b",""), label_size = 18)#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+```
+
