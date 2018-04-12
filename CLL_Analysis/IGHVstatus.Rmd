@@ -155,8 +155,8 @@ methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
 methHm <- pheatmap(cor(methData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
          show_rownames = F, show_colnames = F, main = "Methylation",
-         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
-        annotation_names_row=F
+         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0, legend = F,
+        annotation_names_row=F, treeheight_row=0
          )
 ```
 
@@ -177,12 +177,22 @@ drugData <- data$Drugs
 drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
 drugHm <- pheatmap(cor(drugData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
-         show_rownames = F, show_colnames = F, main = "Drug response",
+         show_rownames = F, show_colnames = F, main = "Drug response", legend = F,
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
-        annotation_names_row=F
+        annotation_names_row=F, treeheight_row = 0
          )
 ```
-
+### with Legend
+```{r HeatmapDrugs_IGHV_leg, fig.width = 5.6, fig.height = 4.9}
+drugData <- data$Drugs
+drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
+drugHmLeg <- pheatmap(cor(drugData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "Drug response", legend = T,
+         annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0,
+        annotation_names_row=F, treeheight_row = 0
+         )
+```
 ## mRNA
 ```{r HeatmapRNAseq_IGHV, fig.width = 5.6, fig.height = 4.9}
 mRNAData <- data$mRNA
@@ -191,7 +201,7 @@ mRNAHm <- pheatmap(cor(mRNAData),
          annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
          show_rownames = F, show_colnames = F, main = "mRNA",
          annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
-         annotation_names_row=F
+         annotation_names_row=F, treeheight_row = 0
          )
 ```
 
@@ -300,7 +310,8 @@ gg_drug <- ggplot(filter(pheno1000_sub_sum,Concentration!=2), aes(x=id, y=meanVi
   theme(text = element_text(size=18),
         axis.text.x = element_text(angle = 60, vjust=1, hjust=1)) +
   xlab("") + ylab("viability") +
-   theme(axis.text.x=element_text(colour=c("red", patcols , "blue")))
+   theme(axis.text.x=element_text(colour=c("red", patcols , "blue")))+
+  guides(col=F)
 gg_drug
 ```
 
@@ -338,8 +349,7 @@ gg_WES <- ggplot(nMutdf_sub, aes(x=paste0(IGHV.status, "-CLL"), y= nMut, label=P
   ylab("# mutations in IGHV genes")+ xlab("IGHV")+
   theme(text = element_text(size=18)) +
   xlab("")+
-  guides(col=F)+#guide_legend(title="IGHV-label")) +
-    coord_fixed(ratio = 0.1)
+  guides(col=F)#guide_legend(title="IGHV-label")) 
 gg_WES
 ```
 
@@ -349,13 +359,24 @@ gg_drughm <- as_ggplot(drugHm$gtable)
 gg_methhm <- as_ggplot(methHm$gtable)
 gg_leg <- as_ggplot(methHmLeg$gtable$grobs[[6]]) + theme(plot.margin = margin(2,0,0,1,unit = "cm"))
 
-c1 <- plot_grid(gg_bees, gg_pie, gg_leg, labels= c("a","b",""), nrow=1, rel_widths = c(1,1,0.5), label_size = 18)
-c2 <- plot_grid(gg_drughm, gg_methhm, labels= c("c","d"), nrow=1, label_size = 18)
-c3 <- plot_grid(gg_drug +guides(col=F), gg_WES , labels = letters[5:6], nrow=1, rel_widths = c(1,1), label_size = 18, axis = "lb", align = "hv")
-
 pdf(file.path(plotdir,"IGHV_mismatch.pdf"),height=15, width=12, useDingbats=F)
-plot_grid(c1,c2,c3, nrow=3, rel_heights = c(1.1,1,1.3))
+plot_grid(gg_bees, gg_pie,gg_drughm, gg_methhm,gg_drug+theme(plot.margin = unit(c(0,0,0,2),"cm")), gg_WES, ncol=2, align="hv", axis="lb", labels = letters[1:6], label_size = 30)
 dev.off()
+
+pdf(file.path(plotdir,"legend_meth.pdf"), useDingbats=F)
+plot_grid(as_ggplot(methHmLeg$gtable))
+dev.off()
+pdf(file.path(plotdir,"legend_drug.pdf"), useDingbats=F)
+plot_grid(as_ggplot(drugHmLeg$gtable))
+dev.off()
+
+# c1 <- plot_grid(gg_bees, gg_pie, gg_leg, labels= c("a","b",""), nrow=1, rel_widths = c(1,1,0.5), label_size = 18)
+# c2 <- plot_grid(gg_drughm, gg_methhm, labels= c("c","d"), nrow=1, label_size = 18)
+# c3 <- plot_grid(gg_drug , gg_WES , labels = letters[5:6], nrow=1, rel_widths = c(1,1), label_size = 18, axis = "lb", align = "hv")
+# 
+# pdf(file.path(plotdir,"IGHV_mismatch.pdf"),height=15, width=12, useDingbats=F)
+# plot_grid(c1,c2,c3, nrow=3, rel_heights = c(1.1,1,1.3))
+# dev.off()
 ```
 
 # SessionInfo
