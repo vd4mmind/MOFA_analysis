@@ -470,7 +470,7 @@ gg_bar
 
 ## Arrange plots
 ```{r TTT_clinical, fig.width=10, fig.height=7}
-plot_grid(gg_forest, gg_bar, labels = c("a","b"), rel_widths=c(1.5,1))
+plot_grid(gg_forest, gg_bar, labels = c("a","b"), rel_widths=c(1.5,1), label_size = 25)
 ```
 
 
