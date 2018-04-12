@@ -301,14 +301,14 @@ if(i==1) gg_legend <- grid.arrange(ggplot(),get_legend(gg_truth), get_legend(gg_
 gg_single[[i]] <-grid.arrange(gg_truth+guides(fill=F),
                               gg_MOFA+guides(fill=F) + ylab(""),
                               gg_iCluster+guides(fill=F) + ylab(""),
-                              gg_GFA+guides(fill=F) + ylab(""),
+                              # gg_GFA+guides(fill=F) + ylab(""),
                               gg_GFA_fixed+ ylab("") +guides(fill=F),
-                              ncol=5, top =paste("k =", names(iCluster.out)[i]))
+                              ncol=4, top =paste("k =", names(iCluster.out)[i]))
 }
 ```
 
 # Arrange plot
-```{r R2_comparison, fig.width=12, fig.height=7}
+```{r R2_comparison, fig.width=10, fig.height=7}
 plot_grid(plot_grid(gg_single[[1]], gg_single[[2]], nrow=2, labels = c("a","b")), gg_legend, rel_widths=c(5,0.5), label_size=22)
 ```
 
