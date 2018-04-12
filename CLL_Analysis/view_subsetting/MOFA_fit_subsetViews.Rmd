@@ -1,0 +1,106 @@
+---
+title: "Running MOFA with only one view or all exept one view"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MOFAtools)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+# Define I/O and options
+```{r}
+io <- list()
+io$outdir_one <- "out/oneview"
+io$outdir_three <- "out/threeview"
+
+opts <- list()
+# missing models only
+# opts$views <- c("Mutations","Drugs","Methylation","mRNA")
+opts$views <- c("Methylation","mRNA")
+
+```
+
+# Load data
+```{r}
+data("CLL_data")
+# CLL_data <- lapply(CLL_data,t)
+```
+
+# Run MOFA for each view separately
+```{r, eval=FALSE}
+single_mofa_models <- list()
+for (i in opts$views) {
+  single_mofa_models[[i]] <- createMOFAobject(CLL_data[i])
+  
+  # Define I/O options
+  DirOptions <- list("dataDir" = tempdir(), "outFile" = paste0(io$outdir_one, "/",i,".hdf5"))
+    
+  # Define data options
+  DataOptions <- getDefaultDataOpts()
+  
+  # Define training options
+  TrainOptions <- getDefaultTrainOpts()
+  TrainOptions$learnFactors <- F
+  # TrainOptions$DropFactorThreshold <- 0.03
+  TrainOptions$tolerance <- 0.01
+  
+  # Define model options  
+  ModelOptions <- getDefaultModelOpts(single_mofa_models[[i]])
+  ModelOptions$numFactors <- 10
+    
+  # Prepare MOFA object for training
+  single_mofa_models[[i]] <- prepareMOFA(single_mofa_models[[i]],
+                                         DataOptions = DataOptions,
+                                         DirOptions = DirOptions,
+                                         ModelOptions = ModelOptions,
+                                         TrainOptions = TrainOptions)
+    
+  # Run MOFA
+  single_mofa_models[[i]] <- runMOFA(single_mofa_models[[i]], DirOptions, mofaPath="/Users/bvelten/anaconda2/bin/mofa")
+}
+```
+
+
+# Run MOFA excluding one view at a time
+```{r}
+view3_mofa_models <- list()
+for (i in opts$views) {
+  view3_mofa_models[[i]] <- createMOFAobject(CLL_data[names(CLL_data) !=i])
+  
+  # Define I/O options
+  DirOptions <- list("dataDir" = tempdir(), "outFile" = file.path(io$outdir_three, paste0("no_",i,".hdf5")))
+    
+  # Define data options
+  DataOptions <- getDefaultDataOpts()
+  
+  # Define training options
+  TrainOptions <- getDefaultTrainOpts()
+  TrainOptions$learnFactors <- F
+  # TrainOptions$DropFactorThreshold <- 0.03
+  TrainOptions$tolerance <- 0.01
+  TrainOptions$maxiter <- 5000
+  
+  # Define model options  
+  ModelOptions <- getDefaultModelOpts(view3_mofa_models[[i]])
+  ModelOptions$numFactors <- 10
+    
+  # Prepare MOFA object for training
+  view3_mofa_models[[i]] <- prepareMOFA(view3_mofa_models[[i]], DataOptions = DataOptions, DirOptions = DirOptions,
+                     ModelOptions = ModelOptions, TrainOptions = TrainOptions)
+    
+  # Run MOFA
+  view3_mofa_models[[i]] <- runMOFA(view3_mofa_models[[i]], DirOptions, mofaPath= "/Users/bvelten/anaconda2/bin/mofa")
+}
+```
+
+
+# SessionInfo
+```{r}
+sessionInfo()
+```
+

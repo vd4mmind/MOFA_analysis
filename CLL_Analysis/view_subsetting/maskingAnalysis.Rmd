@@ -1,0 +1,251 @@
+---
+title: "MOFA - Results using one view only or excluding one view"
+author: "Britta Velten"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(pheatmap)
+library(survival)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(Hmisc)
+library(glmnet)
+library(cowplot)
+knitr::opts_chunk$set(fig.path = "figs_maskingAnalysis/", dev=c('png','pdf'))
+```
+
+```{r}
+io <- list()
+io$outdir_one <- "out/oneview"
+io$outdir_three <- "out/threeview"
+```
+
+# Load orignial model
+```{r}
+load("../out_import_technical_flipped.RData")
+completeCases <- Reduce(intersect,lapply(data, function(dd) colnames(dd)[apply(dd,2,function(p) !all(is.na(p)))]))
+```
+
+# Get survival data
+```{r}
+survivalData <- as.matrix(patmeta[,c("T5","treatedAfter")])
+survivalData<- survivalData[!is.na(survivalData[,1]),]
+colnames(survivalData)<-c("time", "status")
+```
+
+# Colors
+Define colors for barplot
+```{r}
+# define colors
+cols4survival_oneview <- cols4survival_threeview <- c("#E69F00","#D55E00","#009E73", "#56B4E9",  "#999999")
+names(cols4survival_oneview) <- c("Methylation", "Mutations","mRNA",  "Drugs", "joint")
+names(cols4survival_threeview) <- c(paste0("no_",c("Methylation", "Mutations","mRNA",  "Drugs")), "joint")
+```
+
+# One view models
+## Load one view models
+```{r}
+files <- list.files(io$outdir_one)
+OneViewModels <- lapply(files, function(fnm){
+  m <- loadModel(file.path(io$outdir_one,fnm))
+  MOFAtools:::.updateOldModel(m)
+} )
+names(OneViewModels) <- sub(".hdf5", "", files)
+```
+
+## Get factors
+```{r}
+AllFactors_oneView <- lapply(seq_along(OneViewModels), function(m){
+  Zm <- getFactors(OneViewModels[[m]], include_intercept = FALSE)
+  colnames(Zm) <- paste(names(OneViewModels)[m], colnames(Zm), sep="_")
+  Zm[Zm==0] <- NA
+  Zm
+}) 
+names(AllFactors_oneView) <- names(OneViewModels)
+AllFactors_oneView_mat <- Reduce(cbind,AllFactors_oneView)
+```
+
+
+## Correlation to original factors
+For each original factor look at maximal correlation to new factors from the subsetted model.
+```{r cor_1view}
+AllFactors_oneView_sub <- lapply(AllFactors_oneView, function(Zm) Zm[completeCases,])
+max_cor <- sapply(rev(AllFactors_oneView_sub), function(Zm) apply(abs(cor(Z[completeCases,-1], Zm, use="complete.obs")),1,max))
+df_cor_1view <- melt(max_cor, varnames = c("Factor", "Omic"), value.name = "corr")
+gg_corr_oneview <- ggplot(df_cor_1view, aes(x=factor(Factor, levels = 1:10),
+                              y=factor(Omic, levels = rev(c("Mutations", "mRNA", "Methylation", "Drugs"))),
+                              fill=corr)) + 
+  geom_tile() + 
+  guides(fill=guide_colorbar(title="Absolute \n Correlation")) +
+  # scale_fill_gradient(low="white", high="red") +
+    scale_fill_gradientn(colors=c("white","orange","red")) +
+  xlab("Original factor") + ylab("Data for training")
+```
+
+
+## Survival prediction
+Harrals C-Index is used as performance measure, 5-fold stratified cross-validation. Only on samples having all omics.
+```{r, echo=FALSE}
+getCIndex <- function(AllFactors){
+  
+  # subset to common patients, measured in all assays
+  # use only those 121 patients who have all the data to get information on which dataset is most informative not confounded by number of available patients
+  commonPats <- intersect(rownames(Z), rownames(survivalData))
+  commonPats <- intersect(commonPats, completeCases)
+  print(length(commonPats))
+
+  # add clinnical covariates as predictors
+  Zcommon <- Z[commonPats,-1]
+  AllFactors_common <- lapply(AllFactors, function(Zm) Zm[commonPats,])
+  survivalData_common <- survivalData[commonPats,]
+  print(paste("uncensored:",sum(survivalData_common[,2])))
+
+  # construct survival object
+  SurvObject <-Surv(survivalData_common[,1],survivalData_common[,2])
+  
+  #stratified CV to include same proportion of uncensored cases
+  set.seed(1290)
+  uncensored <- SurvObject[,"status"]==1
+  cv_ix <- dismo::kfold(1:length(commonPats), k=5, by=uncensored)
+  
+  # add covariates from forest plot
+  FeatureList <- AllFactors_common
+  FeatureList$Mutations <-  FeatureList$Mutations[,1, drop=FALSE] # only first four factors due to singularity issue
+  FeatureList$joint = Zcommon
+  
+  # fit a cox model and predict on left-out fold
+  fit <- lapply(unique(cv_ix), function(i){
+    
+      #fit coxph for reduced
+      c = lapply(FeatureList, function(x) coxph(SurvObject[cv_ix!=i,]  ~ as.matrix(x)[cv_ix!=i,]))
+      p = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y), FeatureList, c)
+      
+      CI=apply(-p,2, rcorr.cens, SurvObject[cv_ix==i])[1,]
+      list(CI=CI,c=c)
+  })
+
+    # get cross-validated CI
+    concordanceCV <- sapply(fit, function(l) l$CI)
+    colnames(concordanceCV) <- unique(cv_ix)
+    df_hc <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI")
+    df_hc$survType <- "Time to next treatment"
+
+# calculate summary statistics across folds
+summaryHc <- aggregate(df_hc$CI,
+    by = list(predictors = df_hc$predictor, survType=df_hc$survType), 
+    FUN = function(x) c(mean = mean(x), sd = sd(x),
+                        n = length(x)))
+summaryHc <- do.call(data.frame, summaryHc)
+summaryHc$se <- summaryHc$x.sd / sqrt(summaryHc$x.n)
+
+summaryHc
+}
+```
+
+```{r}
+summaryHc_oneview <- getCIndex(AllFactors_oneView)
+```
+
+Make barplot
+```{r barplot_1view}
+limits <- aes(ymax = summaryHc_oneview$x.mean + summaryHc_oneview$se,
+              ymin = summaryHc_oneview$x.mean - summaryHc_oneview$se)
+
+# barplot
+gg_bar_oneview <- ggplot(summaryHc_oneview, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
+    geom_bar(stat = "identity") + 
+   coord_cartesian(ylim = c(0.5,0.85)) +
+  scale_fill_manual(values=cols4survival_oneview) + 
+  geom_errorbar(limits, position = "dodge", width = 0.25)+
+  theme(axis.text.x = element_text(angle = 60, vjust=1,hjust = 1,  lineheight=-2), 
+        strip.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        legend.position= "none",
+        plot.title = element_text(size=18)) +
+  ylab("Harrell's C") + xlab("")
+```
+
+
+# Three view models
+## Load three view models
+```{r}
+files <- list.files(io$outdir_three)
+ThreeViewModels <- lapply(files, function(fnm){
+  m <- loadModel(file.path(io$outdir_three,fnm))
+  MOFAtools:::.updateOldModel(m)
+} )
+names(ThreeViewModels) <- sub(".hdf5", "", files)
+```
+
+## Get factors
+```{r}
+AllFactors_threeView <- lapply(seq_along(ThreeViewModels), function(m){
+  Zm <- getFactors(ThreeViewModels[[m]], include_intercept = FALSE)
+  colnames(Zm) <- paste(names(ThreeViewModels)[m], colnames(Zm), sep="_")
+  Zm[Zm==0] <- NA
+  Zm
+}) 
+names(AllFactors_threeView) <- names(ThreeViewModels)
+AllFactors_threeView_mat <- Reduce(cbind,AllFactors_threeView)
+```
+
+
+## Correlation to original factors
+For each original factor look at maximal correlation to new factors from the subsetted model.
+```{r cor_3view}
+AllFactors_threeView_sub <- lapply(AllFactors_threeView, function(Zm) Zm[completeCases,])
+max_cor <- sapply(rev(AllFactors_threeView_sub), function(Zm) apply(abs(cor(Z[completeCases,-1], Zm, use="complete.obs")),1,max))
+df_cor_3view <- melt(max_cor, varnames = c("Factor", "Omic"), value.name = "corr")
+gg_corr_threeview <- ggplot(df_cor_3view, aes(x=factor(Factor, levels = 1:10),
+                                        y=factor(Omic, levels = rev(paste0("no_",c("Mutations", "mRNA", "Methylation", "Drugs")))),
+                                        fill=corr)) + 
+  geom_tile() + 
+  guides(fill=guide_colorbar(title="Absolute \n Correlation")) +
+  # scale_fill_gradient(low="white", high="red") +
+    scale_fill_gradientn(colors=c("white","orange","red")) +
+  xlab("Original factor") + ylab("Data for training")
+```
+
+
+## Survival prediction
+```{r}
+summaryHc_threeView <- getCIndex(AllFactors_threeView)
+```
+
+Make barplot
+```{r barplot_3view}
+limits <- aes(ymax = summaryHc_threeView$x.mean + summaryHc_threeView$se,
+              ymin = summaryHc_threeView$x.mean - summaryHc_threeView$se)
+
+# barplot
+gg_bar_threeview <- ggplot(summaryHc_threeView, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
+    geom_bar(stat = "identity") + 
+   coord_cartesian(ylim = c(0.5,0.85)) +
+  scale_fill_manual(values=cols4survival_threeview) + 
+  geom_errorbar(limits, position = "dodge", width = 0.25)+
+  theme(axis.text.x = element_text(angle = 60, vjust=1,hjust = 1,  lineheight=-2), 
+        strip.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        legend.position= "none",
+        plot.title = element_text(size=18)) +
+  ylab("Harrell's C") + xlab("")
+```
+
+
+# Arrange figures
+```{r fig_SXX_subviews, fig.height=7, fig.width=10}
+gg_c1 <- plot_grid(gg_corr_oneview, gg_corr_threeview,ncol=1, labels=c("a","c"), align="hv", axis = "lb", label_size = 22)
+gg_c2 <- plot_grid(gg_bar_oneview, gg_bar_threeview, ncol=1, labels=c("b", "d"), align="hv", axis = "lb", label_size = 22)
+plot_grid(gg_c1, gg_c2, nrow=1)
+# plot_grid(gg_corr_oneview, gg_bar_oneview, gg_corr_threeview, gg_bar_threeview,nrow=2, labels=c("a","b", "c", "d"), align="hv", axis = "lb")
+```
+
