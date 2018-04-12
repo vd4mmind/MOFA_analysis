@@ -1,0 +1,341 @@
+---
+title: "MOFA Simulations: analysis of bernoulli likelihood"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# library(MOFAtools)
+library(data.table)
+library(purrr)
+library(ggplot2)
+```
+
+```{r}
+theme_fn <- function() {
+    theme(
+    # plot.title = element_text(size=titlesize),
+    plot.margin = margin(10,10,10,10),
+    axis.title.x=element_text(colour="black",size=rel(1.75), margin=margin(20,0,3,0)),
+    axis.title.y=element_text(colour="black",size=rel(1.75), margin=margin(0,20,0,3)),
+    axis.text.x=element_text(colour="black",size=rel(1.5)),
+    axis.text.y=element_text(colour="black",size=rel(1.5)),
+    axis.ticks.x = element_line(colour="black"),
+    axis.ticks.y = element_line(colour="black"),
+    axis.line.x = element_line(color="black"),
+    axis.line.y = element_line(color="black"),
+    legend.position="none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+}
+```
+
+<!-- Define I/O and options  -->
+```{r}
+# in.folder <- "/Users/ricard/data/MOFA/simulations/results/nongaussian/first_revision/binary"
+in.folder <- "/Users/ricard/data/MOFA_revision/simulations/nongaussian/results/binary"
+out.dir <- "/Users/ricard/MOFA_CLL/simulations/nongaussian/out/bernoulli"
+
+ntrials = 25        # number of trials correpsonding to independent data sets
+ntrials_elbo = 10   # number of trials for model selection in the same data based on ELBO
+```
+
+<!-- Load bernoulli and gaussian models trained on binary data -->
+
+No model selection
+```{r}
+
+# Load bernoulli models
+files <- list.files(in.folder, pattern="^bernoulli")
+bernoulli_models <- list()
+for (i in 1:length(files)) {
+  split <- strsplit(files[i],"_")[[1]]
+  likelihood <- split[1]
+  trial <- substr(split[[2]],1,nchar(split[[2]])-5)
+  bernoulli_models[[paste(likelihood,trial,sep="_")]] <- loadModel(paste0(in.folder,"/",files[i]))
+}
+
+# Load gaussian models
+files <- list.files(in.folder, pattern="^gaussian")
+gaussian_models <- list()
+for (i in 1:length(files)) {
+  split <- strsplit(files[i],"_")[[1]]
+  likelihood <- split[1]
+  trial <- substr(split[[2]],1,nchar(split[[2]])-5)
+  gaussian_models[[paste(likelihood,trial,sep="_")]] <- loadModel(paste0(in.folder,"/",files[i]))
+}
+
+```
+
+With model selection
+```{r}
+
+# Load bernoulli models
+# bernoulli_models <- list()
+# for (i in as.character(0:(ntrials-1))) {
+#   bernoulli_models[[i]] <- list()
+#   for (j in as.character(0:(ntrials_elbo-1))) {
+#     bernoulli_models[[i]][[j]] <- loadModel(paste0(in.folder,"/bernoulli_",i,"_",j,".hdf5"))
+#   }
+# }
+
+# Load gaussian models
+# gaussian_models <- list()
+# for (i in as.character(0:(ntrials-1))) {
+#   gaussian_models[[i]] <- list()
+#   for (j in as.character(0:(ntrials_elbo-1))) {
+#     gaussian_models[[i]][[j]] <- loadModel(paste0(in.folder,"/gaussian_",i,"_",j,".hdf5"))
+#   }
+# }
+
+# For each trial, select model with the highest ELBO
+# for (i in as.character(0:(ntrials-1))) {
+#   # bernoulli
+#   elbo <- sapply(bernoulli_models[[i]], function(x) tail(x@TrainStats$elbo,1))
+#   bernoulli_models[[i]] <- bernoulli_models[[i]][[which.max(elbo)]]
+#   
+#   # gaussian
+#   elbo <- sapply(gaussian_models[[i]], function(x) tail(x@TrainStats$elbo,1))
+#   gaussian_models[[i]] <- gaussian_models[[i]][[which.max(elbo)]]
+# }
+```
+
+<!-- Summarise results into a data table -->
+
+```{r}
+# 
+# bernoulli_dt <- data.table(
+#   trial = as.numeric(sapply(strsplit(names(bernoulli_models),"_"),"[[",2)),
+#   elbo = sapply(bernoulli_models, function(x) tail(x@TrainStats$elbo,1) ),
+#   k = sapply(bernoulli_models, function(x) tail(x@TrainStats$activeK,1) ),
+#   likelihood="Bernoulli"
+# )
+# 
+# gaussian_dt <- data.table(
+#   trial = as.numeric(sapply(strsplit(names(gaussian_models),"_"),"[[",2)),
+#   elbo = sapply(gaussian_models, function(x) tail(x@TrainStats$elbo,1) ),
+#   k = sapply(gaussian_models, function(x) tail(x@TrainStats$activeK,1) ),
+#   likelihood="Gaussian"
+# )
+# 
+# # Concatenate
+# dt <- rbind(bernoulli_dt,gaussian_dt) %>%
+#   .[,k:=k-1] %>% # To account for the constant covariate that learns the mean 
+#   .[,likelihood:=factor(likelihood, levels=c("Bernoulli","Gaussian"))]
+```
+
+```{r}
+
+bernoulli_dt <- data.table(
+  trial = 1:ntrials,
+  elbo = sapply(bernoulli_models, function(x) tail(x@TrainStats$elbo,1) ),
+  k = sapply(bernoulli_models, function(x) tail(x@TrainStats$activeK,1) )-1, # To account for the constant covariate that learns the mean 
+  likelihood="Bernoulli"
+)
+
+gaussian_dt <- data.table(
+  trial = 1:ntrials,
+  elbo = sapply(gaussian_models, function(x) tail(x@TrainStats$elbo,1) ),
+  k = sapply(gaussian_models, function(x) tail(x@TrainStats$activeK,1) ),
+  likelihood="Gaussian"
+)
+
+# Concatenate
+dt <- rbind(bernoulli_dt,gaussian_dt) %>%
+  .[,likelihood:=factor(likelihood, levels=c("Bernoulli","Gaussian"))]
+```
+
+
+<!-- Compare Evidence lower bound -->
+```{r}
+p1 <- ggplot(dt, aes(x=likelihood, y=-log(-elbo))) +
+  geom_boxplot(aes(fill=likelihood), alpha=0.5, outlier.shape=NA) +
+  ggbeeswarm::geom_quasirandom(aes(color=likelihood)) +
+  labs(x="", y="Log Evidence lower bound") +
+  theme_fn()
+print(p1)
+
+pdf(paste0(out.dir, "/bernoulli_elbo.pdf"), width=7, height=5, useDingbats = F)
+print(p1)
+dev.off()
+```
+
+<!-- Compare number of active factors -->
+```{r}
+p2 <- ggplot(dt, aes(x=likelihood, y=k)) +
+  geom_bar(aes(group = trial, fill=likelihood), position = "dodge", stat="identity", color="black") +
+  geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
+  labs(x="", y="Number of infered factors") +
+  scale_y_continuous(limits=c(0,13), breaks=c(5,10)) +
+  # scale_x_continuous(limits=c(-0.03,0.93), breaks=c(0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9)) +
+  theme_fn()
+print(p2)
+
+pdf(paste0(out.dir, "/bernoulli_nfactors.pdf"), width=7, height=5, useDingbats = F)
+print(p2)
+dev.off()
+```
+
+```{r}
+
+# Bernoulli likelihood
+dt_filt <- dt[likelihood=="Bernoulli"]
+p1 <- ggplot(dt_filt, aes(x=likelihood, y=k)) +
+  geom_bar(aes(group = trial, fill=elbo), position = "dodge", stat="identity", color="black") +
+  geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
+  labs(x="", y="Number of infered factors") +
+  scale_y_continuous(limits=c(0,13), breaks=c(5,10)) +
+  scale_fill_gradient(low="darkred", high="red") +
+  theme_fn() +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=11)
+  )
+print(p1)
+
+pdf(paste0(out.dir, "/bernoulli_nfactors_elbo.pdf"), width=7, height=5, useDingbats = F)
+print(p1)
+dev.off()
+
+# Gaussian likelihood
+dt_filt <- dt[likelihood=="Gaussian"]
+p2 <- ggplot(dt_filt, aes(x=likelihood, y=k)) +
+  geom_bar(aes(group = trial, fill=elbo), position = "dodge", stat="identity", color="black") +
+  geom_hline(yintercept = 10, color="black", size=0.6, linetype="solid") +
+  labs(x="", y="Number of infered factors") +
+  scale_y_continuous(limits=c(0,13), breaks=c(5,10)) +
+  scale_fill_gradient(low="cornflowerblue", high="blue") +
+  theme_fn() +
+  theme(
+    legend.position = "right",
+    legend.title = element_text(color="black", size=14),
+    legend.text = element_text(color="black", size=11)
+  )
+pdf(paste0(out.dir, "/gaussian_nfactors_elbo.pdf"), width=7, height=5, useDingbats = F)
+print(p2)
+dev.off()
+
+```
+
+<!-- Compare reconstruction error -->
+```{r}
+sigmoid <- function(x) 1/(1+exp(-x))
+
+dt[,mse:=Inf]
+for (i in 1:length(gaussian_models)) {
+  Y <- getTrainData(gaussian_models[[i]], views="0")[[1]]
+  # Z <- getFactors(gaussian_models[[i]], include_intercept = T)
+  # SW <- getWeights(gaussian_models[[i]], views="0")[[1]]
+  # Ypred_gaussian <- t(Z %*% t(SW))
+  Ypred_gaussian <- predict(gaussian_models[[i]])[[1]]
+  mse_gaussian <- mean((Ypred_gaussian - Y)**2)
+  dt[likelihood=="Gaussian" & trial==i-1, mse:=mse_gaussian]
+}
+for (i in 1:length(bernoulli_models)) {
+  Y <- getTrainData(bernoulli_models[[i]], views="0")[[1]]
+  # Z <- getFactors(bernoulli_models[[i]], include_intercept = T)
+  # SW <- getWeights(bernoulli_models[[i]], views="0")[[1]]
+  # Ypred_bernoulli <- sigmoid(t(Z %*% t(SW)))
+  Ypred_bernoulli <- predict(bernoulli_models[[i]])[[1]]
+  mse_bernoulli <- mean((Ypred_bernoulli - Y)**2)
+  dt[likelihood=="Bernoulli" & trial==i-1, mse:=mse_bernoulli]
+}
+
+# Plot reconstruction error
+p3 <- ggplot(dt, aes(x=likelihood, y=mse)) +
+  geom_boxplot(aes(fill=likelihood), alpha=0.5, outlier.shape=NA) +
+  ggbeeswarm::geom_quasirandom(aes(color=likelihood)) +
+  labs(x="", y="Mean Squared Error") +
+  theme_fn()
+print(p3)
+
+pdf(paste0(out.dir, "/bernoulli_mse.pdf"), width=7, height=5, useDingbats = F)
+print(p3)
+dev.off()
+```
+
+<!-- Compare distributions of reconstructed data -->
+```{r}
+
+# dt_truth <- getTrainData(poisson_models[[1]])[["0"]] %>% as.data.table %>% melt() %>% .[,likelihood:="Truth"]
+
+Z <- getFactors(bernoulli_models[[1]], include_intercept = T)
+SW <- getWeights(bernoulli_models[[1]], views="0")[[1]]
+dt_bernoulli <- sigmoid(t(Z %*% t(SW))) %>% as.data.table %>% melt() %>% .[,likelihood:="Bernoulli"]
+
+Z <- getFactors(gaussian_models[[1]], include_intercept = T)
+SW <- getWeights(gaussian_models[[1]], views="0")[[1]]
+dt_gaussian <- t(Z %*% t(SW)) %>% as.data.table %>% melt() %>% .[,likelihood:="Gaussian"]
+
+dt <- rbind(dt_bernoulli, dt_gaussian)
+
+p <- ggplot(dt, aes(x=value, group=likelihood, fill=likelihood)) +
+  geom_histogram(aes(y=..density..), alpha=0.75, binwidth=0.1) +
+  xlim(c(-1,2)) +
+  labs(x="", y="Density") +
+  theme_bw() +
+  theme(
+    axis.title.x=element_text(colour="black",size=rel(2.0)),
+    axis.title.y=element_text(colour="black",size=rel(2.0)),
+    axis.text.x=element_text(colour="black",size=rel(1.5)),
+    axis.text.y=element_text(colour="black",size=rel(1.5)),
+    axis.ticks.x = element_line(colour="black"),
+    axis.ticks.y = element_line(colour="black"),
+    legend.position="top",
+    legend.key = element_rect(fill='white'),
+    legend.text = element_text(size=rel(1.25)),
+    legend.title = element_text(size=rel(1.5))
+  )
+print(p)
+
+pdf(paste0(out.dir, "/bernoulli_dist.pdf"), width=6, height=4, useDingbats = F)
+print(p)
+dev.off()
+```
+
+
+<!-- (IGNORE) True variance explained per factor -->
+```{r}
+in.folder <- "/Users/ricard/data/MOFA/simulations/data/nongaussian/binary"
+
+M <- 3
+ntrials <- 25
+
+trials <- as.character(0:(ntrials-1))
+views <- as.character(0:(M-1))
+
+Z <- W <- F <- lapply(trials, function(x) NULL)
+for (i in trials) {
+  W[[i]] < list()
+  F[[i]] < list()
+  Z[[i]] <- fread(sprintf("%s/trial%s_Z.txt", in.folder,i)) %>% as.matrix
+  for (m in views) {
+    W[[i]][[m]] <- fread(sprintf("%s/trial%s_%s_W.txt", in.folder,i,m)) %>% as.matrix
+    F[[i]][[m]] <- fread(sprintf("%s/trial%s_%s_F.txt", in.folder,i,m)) %>% as.matrix
+  }
+}
+
+r2 <- sapply(trials, function(x) NULL)
+foo <- sapply(trials, function(x) NULL)
+for (i in trials) {
+  r2[[i]] <- data.frame(NA,M,ncol(Z[[i]]))
+  colnames(r2[[i]]) <- views
+  for (m in views) {
+    # SS <- sum((F[[i]] %*% t(W[[i]][[m]]))**2)
+    for (k in 1:ncol(Z[[i]])) {
+      Ypred <- Z[[i]][,k] %*% t(W[[i]][[m]][,k])
+      r2[[i]][m,k] <- 1 - (sum((F[[i]][[m]] - Ypred)**2) / sum(F[[i]][[m]]**2) )
+    }
+  }
+  foo[i] <- min(apply(r2[[i]],2,max))
+}
+
+min(unlist(foo))
+
+```
+

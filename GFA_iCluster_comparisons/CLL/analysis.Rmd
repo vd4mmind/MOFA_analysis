@@ -1,0 +1,495 @@
+---
+title: "MOFA: comparison with GFA and iCluster in CLL data"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# devtools::load_all("/homes/ricard/mofa/MOFAtools")
+library(GFA)
+library(data.table)
+library(purrr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+source("/Users/ricard/mofa_rebuttal/gfa_comparison/cll/utils.R")
+```
+
+<!-- Define I/O and options -->
+```{r}
+trials <- 1:5
+in.folder <- "/Users/ricard/data/MOFA_revision/CLL"
+out.folder <- "/Users/ricard/mofa_rebuttal/gfa_comparison/cll/out/pdf"
+```
+
+<!-- Load CLL data -->
+```{r}
+data("CLL_data")
+CLL_data <- lapply(CLL_data,t)
+```
+
+<!-- Parse data -->
+```{r}
+CLL_data_imputed <- list()
+CLL_data_imputed_norm <- list()
+CLL_data_norm <- list()
+
+# Impute missing data
+CLL_data_imputed[["Drugs"]] <- impute(CLL_data[["Drugs"]], margin = 2)
+CLL_data_imputed[["mRNA"]] <- impute(CLL_data[["mRNA"]], margin = 2)
+CLL_data_imputed[["Methylation"]] <- impute(CLL_data[["Methylation"]], margin = 2)
+CLL_data_imputed[["Mutations"]] <- round(impute(CLL_data[["Mutations"]], margin = 2))
+
+# Center non-imputed data
+# CLL_data_norm <- normalizeData(CLL_data, type="center")
+CLL_data_norm[["Drugs"]] <- scale(CLL_data[["Drugs"]], center = TRUE)
+CLL_data_norm[["mRNA"]] <- scale(CLL_data[["mRNA"]], center = TRUE)
+CLL_data_norm[["Methylation"]] <- scale(CLL_data[["Methylation"]], center = TRUE)
+
+# Center imputed data
+CLL_data_imputed_norm[["Drugs"]] <- scale(CLL_data_imputed[["Drugs"]], center = TRUE)
+CLL_data_imputed_norm[["mRNA"]] <- scale(CLL_data_imputed[["mRNA"]], center = TRUE)
+CLL_data_imputed_norm[["Methylation"]] <- scale(CLL_data_imputed[["Methylation"]], center = TRUE)
+
+# Reorder data
+CLL_data <- CLL_data[c("Drugs","mRNA", "Methylation", "Mutations")]
+CLL_data_norm <- CLL_data[c("Drugs","mRNA", "Methylation", "Mutations")]
+CLL_data_imputed <- CLL_data_imputed[c("Drugs","mRNA", "Methylation", "Mutations")]
+CLL_data_imputed_norm <- CLL_data_imputed_norm[c("Drugs","mRNA", "Methylation", "Mutations")]
+```
+
+<!-- Load pre-trained GFA models as MOFAobjects -->
+```{r}
+gfa_models <- map(trials, ~ readRDS(sprintf("%s/GFA_out/gfa%d.rds",in.folder,.)))
+```
+
+<!-- Load pre-trained MOFA models -->
+```{r}
+mofa_models <- map(trials, ~ readRDS(sprintf("%s/MOFA_out/mofa_%d.rds",in.folder,.)))
+```
+
+<!-- Load pre-trained iCluster models, do model selection, and convert to MOFAobjects -->
+```{r}
+icluster_data <- c(
+  CLL_data_imputed_norm[c("Drugs","mRNA","Methylation")],
+  CLL_data_imputed["Mutations"]
+)
+
+factors <- 20
+icluster_models <- list()
+for (i in as.character(trials)) {
+  icluster_models[[i]] <- list()
+  for (k in as.character(1:factors)) {
+    file <- sprintf("%s/iCluster_out/iCluster.fit.k%s_%s.Rdata",in.folder,k,i)
+    if (file.exists(file)) {
+      load(file)
+      # Select model with the optimal lambda
+      nLambda = nrow(tuned.out$lambda)
+      bic <- sapply(tuned.out$fit, function(f) f$BIC)
+      bestFit <- tuned.out$fit[[which.min(bic)]]
+      icluster_models[[i]][[k]] <- bestFit
+    }
+  }
+  
+  # Select model with the optimal number of factors
+  if (length(icluster_models[[i]]) > 0) {
+    bic <- sapply(icluster_models[[i]],"[[","BIC")
+    bic <- sapply(bic, function(x) ifelse(is.null(x),NA,x))
+    bestFit <- icluster_models[[i]][[names(bic)[which.min(bic)]]]
+    icluster_models[[i]] <- iClustertoMOFA(bestFit, icluster_data )
+  }
+}
+```
+
+<!-- Final number of factors -->
+```{r}
+df <- rbind(
+  data.frame(model="GFA", trial=as.factor(1:length(gfa_models)), k=sapply(gfa_models, function(x) ncol(getFactors(x)))),
+  data.frame(model="MOFA", trial=as.factor(1:length(mofa_models)), k=sapply(mofa_models, function(x) ncol(getFactors(x, include_intercept = F)))),
+  data.frame(model="iCluster", trial=as.factor(1:length(icluster_models)), k=sapply(icluster_models, function(x) ncol(getFactors(x, include_intercept = F))))
+)
+
+p <- ggplot(df, aes(x=model, y=k, fill=model, group=trial)) +
+  geom_bar(stat="identity", position = "dodge", width=0.5, color="black") +
+  geom_hline(yintercept = 50, linetype = "dashed") +
+  coord_cartesian(ylim=c(0,75)) +
+  # scale_y_continuous(breaks = c(0,5,10,15,20,25), expand=c(0,0.1)) +
+  labs(x="", y="Number of active factors") +
+  theme_bw() +
+  theme(
+    # plot.title = element_text(size=titlesize),
+    plot.margin = margin(10,10,10,10),
+    axis.title.x=element_text(colour="black",size=rel(1.75), margin=margin(20,0,3,0)),
+    axis.title.y=element_text(colour="black",size=rel(1.75), margin=margin(0,20,0,3)),
+    axis.text.x=element_text(colour="black",size=rel(1.5), angle=90),
+    # axis.text.x=element_blank(),
+    axis.text.y=element_text(colour="black",size=rel(1.7)),
+    axis.ticks.x = element_line(colour="black"),
+    axis.ticks.y = element_line(colour="black"),
+    axis.line.x = element_line(color="black"),
+    axis.line.y = element_line(color="black"),
+    legend.position="none",
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
+print(p)
+
+# pdf(file=paste0(out.folder,"/activeFactors.pdf"), height=6, width=7)
+# print(p)
+# dev.off()
+```
+
+<!-- Subset the first 10 factors -->
+```{r}
+# mofa_models <- map(mofa_models, ~ subsetFactors(., factors=1:10))
+# gfa_models <- map(gfa_models, ~ subsetFactors(., factors=1:10))
+
+mofa_models_small <- map(mofa_models, function(x) if ((getDimensions(x)[["K"]]-1)>10) { subsetFactors(x, factors=c("intercept",1:10)) } else { x })
+gfa_models_small <- map(gfa_models, function(x) if ((getDimensions(x)[["K"]]-1)>10) { subsetFactors(x, factors=1:10) } else { x })
+icluster_models_small <- map(icluster_models, function(x) if ((getDimensions(x)[["K"]]-1)>10) { subsetFactors(x, factors=c("intercept",1:10)) } else { x })
+```
+
+<!-- Variance decomposition -->
+
+Total variance explained
+```{r}
+mofa_r2 <- map(mofa_models, ~ calculateVarianceExplained(., cluster=F))
+gfa_r2 <- map(gfa_models, ~ calculateVarianceExplained(., cluster=F))
+
+mofa_totalR2 <- map(mofa_r2, ~ .[["R2Total"]] %>% as.data.frame %>% tibble::rownames_to_column("view")) %>%
+  rbindlist %>% setnames(".","r2") %>% .[,model:="mofa"] %>% .[,trial:=c(rep(1,4),rep(2,4),rep(3,4),rep(4,4),rep(5,4)),]
+
+gfa_totalR2 <- map(gfa_r2, ~ .[["R2Total"]] %>% as.data.frame %>% tibble::rownames_to_column("view")) %>%
+  rbindlist %>% setnames(".","r2") %>% .[,model:="gfa"] %>% .[,trial:=c(rep(1,4),rep(2,4),rep(3,4),rep(4,4),rep(5,4)),]
+
+df_totalR2 <- rbind(mofa_totalR2, gfa_totalR2) %>% .[,.(mean_r2=mean(r2), sd_r2=sd(r2)),by=c("view","model")] %>% 
+  .[view!="Mutations"]
+
+p <- ggplot(df_totalR2, aes(x=view, y=mean_r2, group=model)) +
+  labs(x="", y="Variance explained (R2)") +
+  geom_bar(aes(fill=model), stat="identity", color="black", position="dodge") +
+  geom_errorbar(aes(ymin=mean_r2-sd_r2, ymax=mean_r2+sd_r2), width=.25, position=position_dodge(.9)) +
+  coord_cartesian(ylim=c(0,1)) +
+  theme_bw() +
+  # facet_wrap(~view, scales="free") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(colour="black", size=20, vjust=1.5),
+    axis.text.x = element_text(colour="black",size=rel(1.7), margin=margin(5,0,0,0)),
+    axis.text.y = element_text(colour="black",size=rel(1.5)),
+    axis.line = element_line(colour="black", size=rel(0.5)),
+    axis.ticks.x = element_line(colour="black", size=rel(1.0)),
+    axis.ticks.y = element_line(colour="black", size=rel(1.0)),
+    legend.position="right"
+  )
+print(p)
+```
+
+Variance explained by factor
+```{r}
+
+mofa_r2 <- map(mofa_models, ~ calculateVarianceExplained(., cluster=F))
+gfa_r2 <- map(gfa_models, ~ calculateVarianceExplained(., cluster=F))
+
+mofa_factorR2 <- map(mofa_r2, ~ .[["R2PerFactor"]] %>% apply(.,1,mean) %>% as.data.table %>% .[,factor:=1:.N] ) %>% rbindlist() %>%
+   setnames(".","r2") %>% .[,trial:=1:.N, by="factor"] %>% .[,model:="MOFA"]
+
+gfa_factorR2 <- map(gfa_r2, ~ .[["R2PerFactor"]] %>% apply(.,1,mean) %>% as.data.table %>% .[,factor:=1:.N] ) %>% rbindlist() %>%
+   setnames(".","r2") %>% .[,trial:=1:.N, by="factor"] %>% .[,model:="GFA"]
+
+df_factorR2 <- rbind(mofa_factorR2, gfa_factorR2) %>% .[,.(mean_r2=mean(r2), sd_r2=sd(r2)),by=c("factor","model")]
+
+p <- ggplot(df_factorR2, aes(x=as.factor(factor), y=mean_r2, group=model)) +
+  labs(x="", y="Variance explained (R2)") +
+  geom_bar(aes(fill=model), stat="identity", color="black", position="dodge", width=0.75) +
+  # geom_errorbar(aes(ymin=mean_r2-sd_r2, ymax=mean_r2+sd_r2), width=.25, position=position_dodge(.9)) +
+  coord_cartesian(expand = c(0,0)) +
+  geom_hline(yintercept = 0.01, linetype = "dashed") +
+  theme_bw() +
+  # facet_wrap(~view, scales="free") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(colour="black", size=20, vjust=1.5),
+    # axis.text.x = element_text(colour="black",size=rel(1.7), margin=margin(5,0,0,0)),
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(colour="black",size=rel(1.7)),
+    axis.line = element_line(colour="black", size=rel(0.5)),
+    axis.ticks.x = element_line(colour="black", size=rel(1.0)),
+    axis.ticks.y = element_line(colour="black", size=rel(1.0)),
+    legend.position="right"
+  )
+print(p)
+
+pdf(file=paste0(out.folder,"/FactorVar.pdf"), height=6, width=8)
+print(p)
+dev.off()
+```
+
+Variance explained by factor and view
+```{r}
+
+# MOFA
+for (i in 1:length(mofa_models_small)) {
+  pdf(file=sprintf("%s/mofa_FactorViewVar%d.pdf",out.folder,i), height=6, width=7)
+  plotVarianceExplained(mofa_models_small[[i]], cluster=F)
+  dev.off()
+}
+
+# GFA
+for (i in 1:length(gfa_models_small)) {
+  pdf(file=sprintf("%s/gfa_FactorViewVar%d.pdf",out.folder,i), height=6, width=7)
+  plotVarianceExplained(gfa_models_small[[i]], cluster=F)
+  dev.off()
+}
+
+# iCluster
+for (i in 1:length(icluster_models_small)) {
+  pdf(file=sprintf("%s/icluster_FactorViewVar%d.pdf",out.folder,i), height=6, width=7)
+  plotVarianceExplained(icluster_models_small[[i]], views=c("Drugs","mRNA","Methylation"), cluster=F)
+  dev.off()
+}
+```
+
+
+<!-- Factor correlation within trials -->
+```{r}
+gfa_factorCor <- map(gfa_models_small, ~
+  plotFactorCor(.) %>% as.data.table %>% .[,factor1:=1:.N] %>% melt(id.vars="factor1", variable.name="factor2", value.name = "r")
+) %>% rbindlist %>% .[,trial:=1:.N, by=c("factor1","factor2")] %>% .[,model:="GFA"]
+
+mofa_factorCor <- map(mofa_models_small, ~
+  plotFactorCor(.) %>% as.data.table %>% .[,factor1:=1:.N] %>% melt(id.vars="factor1", variable.name="factor2", value.name = "r")
+) %>% rbindlist %>% .[,trial:=1:.N, by=c("factor1","factor2")] %>% .[,model:="MOFA"]
+
+icluster_factorCor <- map(icluster_models_small, ~
+  plotFactorCor(.) %>% as.data.table %>% .[,factor1:=1:.N] %>% melt(id.vars="factor1", variable.name="factor2", value.name = "r")
+) %>% rbindlist %>% .[,trial:=1:.N, by=c("factor1","factor2")] %>% .[,model:="iCluster"]
+
+
+df_factorCor <- rbind(mofa_factorCor, gfa_factorCor, icluster_factorCor) %>%
+  .[,c("factor1","factor2"):=list(as.numeric(factor1),as.numeric(factor2))] %>%
+  .[factor1!=factor2] %>%
+  .[,.(r=max(r)),by=c("factor1","model","trial")]
+  # %>% .[,.(mean_r=mean(r), sd_r=sd(r)),by=c("factor","model")]
+
+
+p <- ggplot(df_factorCor, aes(x=model, y=r, fill=model)) +
+  # geom_density(alpha=0.5) +
+  labs(x="", y="Correlation between factors") +
+  geom_boxplot(outlier.shape = NA) +
+  coord_cartesian(ylim=c(0,1.0)) +
+  theme_bw() +
+  # facet_wrap(~view, scales="free") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(colour="black", size=20, vjust=1.5),
+    axis.text.x = element_text(colour="black",size=rel(1.7), angle=90, vjust=0.5, hjust=1),
+    axis.text.y = element_text(colour="black",size=rel(1.7)),
+    axis.line = element_line(colour="black", size=rel(0.5)),
+    axis.ticks.x = element_line(colour="black", size=rel(1.0)),
+    axis.ticks.y = element_line(colour="black", size=rel(1.0)),
+    legend.position="none"
+  )
+print(p)
+
+# pdf(file=paste0(out.folder,"/FactorCor.pdf"), height=6, width=7)
+# print(p)
+# dev.off()
+```
+
+MOFA
+```{r}
+for (i in trials) {
+  pdf(file=paste0(out.folder,"/mofa_corFactors",i,".pdf"), height=5.5, width=7, useDingbats = F)
+  plotFactorCor(mofa_models_small[[i]])
+  dev.off()
+}
+
+# r <- map(mofa_models, plotFactorCor)
+
+# rr <- map(r,abs) %>% Reduce("+",.) / length(r)
+# corrplot::corrplot(rr)
+```
+
+GFA
+```{r}
+for (i in trials) {
+  pdf(file=paste0(out.folder,"/gfa_corFactors",i,".pdf"), height=5.5, width=7, useDingbats = F)
+  plotFactorCor(gfa_models_small[[i]])
+  dev.off()
+}
+
+# r <- map(gfa_mofamodels, plotFactorCor)
+# rr <- map(r,abs) %>% Reduce("+",.) / length(r)
+# corrplot::corrplot(rr)
+```
+
+iCluster
+```{r}
+for (i in trials) {
+  # pdf(file=paste0(out.folder,"/iCluster_corFactors",i,".pdf"), height=5.5, width=7, useDingbats = F)
+  plotFactorCor(icluster_models_small[[i]])
+  # dev.off()
+}
+
+# r <- map(gfa_mofamodels, plotFactorCor)
+# rr <- map(r,abs) %>% Reduce("+",.) / length(r)
+# corrplot::corrplot(rr)
+```
+
+<!-- Consistency across trials -->
+
+Factors
+```{r}
+
+# GFA
+# pdf(file=paste0(out.folder,"/gfa_robustness.pdf"), height=6, width=7)
+compareModels(gfa_models_small, show_colnames=F)
+# dev.off()
+
+# MOFA
+# pdf(file=paste0(out.folder,"/mofa_robustness.pdf"), height=6, width=7)
+compareModels(mofa_models_small, show_colnames=F)
+# dev.off()
+
+# iCluster
+pdf(file=paste0(out.folder,"/icluster_robustness.pdf"), height=6, width=7)
+compareModels(icluster_models_small, show_colnames=F)
+dev.off()
+```
+
+Weights
+```{r}
+
+# GFA
+# weights <- lapply(1:length(gfa_models_small), function(i) {
+#   model <- gfa_models_small[[i]]
+#   Wtmp <- getWeights(model, views="mRNA", factors="all")[[1]]
+#   colnames(Wtmp) <- paste(paste0("LF", 1:(ncol(Wtmp))), paste("model", i, sep=""), sep="_")
+#   Wtmp
+#   })
+# corWeights <- abs(cor(Reduce(cbind,weights)))
+# pdf(paste0(out.folder,"/robustness_weights_gfa.pdf"), width=7, height=5)
+# pheatmap::pheatmap(corWeights, show_rownames = F, show_colnames = F, 
+#                    color = colorRampPalette(c("white",RColorBrewer::brewer.pal(9,name="YlOrRd")))(100))
+# dev.off()
+
+
+# MOFA
+# weights <- lapply(1:length(mofa_models_small), function(i) {
+#   model <- mofa_models_small[[i]]
+#   Wtmp <- getWeights(model, views="mRNA", factors="all")[[1]]
+#   colnames(Wtmp) <- paste(paste0("LF", 1:(ncol(Wtmp))), paste("model", i, sep=""), sep="_")
+#   Wtmp
+#   })
+# corWeights <- abs(cor(Reduce(cbind,weights)))
+# pdf(paste0(out.folder,"/robustness_weights_mofa.pdf"), width=7, height=5)
+# pheatmap::pheatmap(corWeights, show_rownames = F, show_colnames = F, 
+#                    color = colorRampPalette(c("white",RColorBrewer::brewer.pal(9,name="YlOrRd")))(100))
+# dev.off()
+
+# iCluster
+```
+
+
+<!-- Compute association between Factors and IGHV -->
+```{r}
+# Fetch IGHV status
+ighv <- as.factor(CLL_data$Mutations[,"IGHV"])
+
+# Fetch factors
+MOFA_factors <- lapply(mofa_models, function(m) getFactors(m, include_intercept = F))
+all(rownames(MOFA_factors[[1]]) == names(ighv))
+GFA_factors <- lapply(gfa_models, getFactors)
+all(rownames(GFA_factors[[1]]) == names(ighv))
+icluster_factors <- lapply(icluster_models, getFactors)
+all(rownames(icluster_factors[[1]]) == names(ighv))
+# Association test between factor and IGHV status
+
+# MOFA
+df_MOFA <- lapply(seq_along(MOFA_factors), function(i) {
+ m <- MOFA_factors[[i]]
+ df <- data.table(factor = 1:ncol(m), pval=sapply(1:ncol(m), function(f) t.test(m[,f]~ighv)$p.value))
+ df$trial <- i
+ df
+}) %>% rbindlist() %>% .[,model:="MOFA"] %>% .[,pvaladj:=p.adjust(pval, method="bonferroni")]
+
+# GFA
+df_GFA <- lapply(seq_along(GFA_factors), function(i) {
+ m <- GFA_factors[[i]]
+ df <- data.table(factor = 1:ncol(m), pval=sapply(1:ncol(m), function(f) t.test(m[,f]~ighv)$p.value))
+ df$trial <- i
+ df
+}) %>% rbindlist() %>% .[,model:="GFA"] %>% .[,pvaladj:=p.adjust(pval, method="bonferroni")]
+
+# iCluster
+df_icluster <- lapply(seq_along(icluster_factors), function(i) {
+ m <- icluster_factors[[i]]
+ m <- m[,colnames(m)!="intercept"]
+ df <- data.table(factor = 1:ncol(m), pval=sapply(1:ncol(m), function(f) t.test(m[,f]~ighv)$p.value))
+ df$trial <- i
+ df
+}) %>% rbindlist() %>% .[,model:="iCluster"] %>% .[,pvaladj:=p.adjust(pval, method="bonferroni")]
+
+fdr_threshold <- 0.01
+df <- rbind(df_GFA, df_MOFA, df_icluster) %>% .[factor<=10] %>%
+  .[,sig:=pvaladj<fdr_threshold] %>%
+  .[,.(nsig=sum(sig)),by=c("model","trial")]
+
+df[,.(mean(nsig)),by="model"]  
+```
+
+<!-- Plot association with IGHV for a single trial -->
+```{r}
+# df <- rbind(df_GFA[trial==1], df_MOFA[trial==1], df_icluster[trial==1]) %>% .[factor<=10]
+df <- rbind(df_MOFA[trial==1], df_icluster[trial==1]) %>% .[factor<=10]
+
+# Joint plot
+p <- ggplot(df, aes(x=as.factor(factor), y=-log(pvaladj), col=model)) + 
+  # geom_point(size=3) + 
+  ggbeeswarm::geom_beeswarm(size=3) + 
+  geom_hline(yintercept=-log(0.01)) +  # 1% FDR
+  labs(x="Factor", y="-log pvalue") +
+  # facet_wrap(~model) +
+  theme_bw() +
+  theme(
+    axis.title.x = element_text(colour="black", size=20),
+    axis.title.y = element_text(colour="black", size=20),
+    axis.text.x = element_text(colour="black",size=rel(1.7)),
+    axis.text.y = element_text(colour="black",size=rel(1.7)),
+    axis.line = element_line(colour="black", size=rel(0.5)),
+    axis.ticks.x = element_line(colour="black", size=rel(1.0)),
+    axis.ticks.y = element_line(colour="black", size=rel(1.0)),
+    legend.position="right"
+  )
+print(p)
+
+pdf(file=paste0(out.folder,"/ighvAssociationJoint.pdf"), height=6, width=7)
+print(p)
+dev.off()
+
+# Separate plot per model
+p <- ggplot(df, aes(x=as.factor(factor), y=-log(pvaladj))) + 
+  geom_point(size=3, color="black") + 
+  geom_hline(yintercept=-log(0.01)) +  # 1% FDR
+  labs(x="Factor", y="-log pvalue") +
+  facet_wrap(~model) +
+  theme_bw() +
+  theme(
+    axis.title.x = element_text(colour="black", size=20),
+    axis.title.y = element_text(colour="black", size=20),
+    axis.text.x = element_text(colour="black",size=rel(1.7)),
+    axis.text.y = element_text(colour="black",size=rel(1.7)),
+    axis.line = element_line(colour="black", size=rel(0.5)),
+    axis.ticks.x = element_line(colour="black", size=rel(1.0)),
+    axis.ticks.y = element_line(colour="black", size=rel(1.0)),
+    strip.text = element_text(colour="black",size=rel(1.5))
+  )
+print(p)
+
+pdf(file=paste0(out.folder,"/ighvAssociationSeparate.pdf"), height=4, width=11.5, useDingbats = F)
+print(p)
+dev.off()
+```

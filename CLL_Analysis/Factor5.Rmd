@@ -1,0 +1,422 @@
+---
+title: "Characterisation of oxidative stress factor"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+library(data.table)
+library(purrr)
+library(ggplot2)
+library(RColorBrewer)
+library(beeswarm)
+source("/Users/ricard/MOFA_CLL/stress_factor/utils.R")
+```
+
+
+<!-- # Load fitted model -->
+```{r}
+model <- loadModel(file = "/Users/ricard/data/CLL/out/test_final/17Aug/model15.hdf5", sortFactors=T)
+```
+
+<!-- Define factors -->
+```{r}
+stress_factor <- "5"
+ighv_factor <- "1"
+```
+
+<!-- Replace ensembl IDs by gene symbols -->
+```{r}
+tmp <- read.csv("/Users/ricard/data/ensembl/human/v87/BioMart/mRNA/Hsapiens_genes_BioMart.87.txt", header=T, sep="\t", stringsAsFactors=F)
+gene_meta <- tmp$symbol; names(gene_meta) <- tmp$ens_id
+featureNames(model)[["mRNA"]] <- stringr::str_replace_all(featureNames(model)[["mRNA"]], gene_meta)
+```
+
+<!-- Load patient survival metadata -->
+```{r load_patient_meta, echo=FALSE}
+load("/Users/ricard/data/CLL/pace/data/patmeta.RData")
+patmeta <- patmeta[sampleNames(model),] %>% tibble::rownames_to_column("sample") %>% as.data.table
+# survivalDataTTT <- patmeta[,c("sample","IGHV","T5","treatedAfter")] %>% .[,IGHV:=as.factor(IGHV)]
+# survivalDataOS <-  patmeta[,c("sample","IGHV","T6","died")] %>% .[,IGHV:=as.factor(IGHV)]
+# colnames(survivalDataOS) <- colnames(survivalDataTTT) <- c("sample","IGHV","time", "status")
+```
+
+<!-- Extract relevant latent variables -->
+```{r}
+Z <- getFactors(model, include_intercept = F)
+
+Z[is.na(Z)] <- 0
+
+df = data.table(sample = sampleNames(model),
+                x = Z[,stress_factor], 
+                y = Z[,ighv_factor],
+                # ighv = patmeta[,IGHV],
+                # cluster = cut(Z[,stress_factor], breaks=c(-Inf,1.5,Inf), labels=c("Non-stressed","Stressed"))
+                cluster = as.factor(c("Stressed","Non-stressed")[kmeans(Z[,stress_factor],2)$cluster])
+                )
+# df <- df[complete.cases(df),]
+```
+
+<!-- BIC -->
+```{r}
+library(ClusterR)
+Optimal_Clusters_KMeans(Z[,stress_factor, drop=F], 10, criterion="BIC")
+```
+
+<!-- Beeswarm plot -->
+```{r}
+
+
+# get methylation cluster and define colors
+# MC <- df$cluster
+# col4MC <- c(Stressed="navy", NonStressed="darkred")
+# MCcolors <- col4MC[MC]
+
+#make plot
+foo <- df[,c("sample","x")]; foo$TNF <- model@TrainData$mRNA["TNF",]
+foo <- foo[complete.cases(foo),]
+
+pdf("/Users/ricard/MOFA_CLL/stress_factor/out/beeswarm2.pdf", width = 5, height = 5, useDingbats=F)
+# par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+# colors <- terrain.colors(10)[as.numeric(cut(foo$TNF,breaks = 10))]
+colors <- colorRampPalette(rev(brewer.pal(n = 5, name = "RdYlBu")))(10)[as.numeric(cut(foo$TNF,breaks = 10))]
+bs <- beeswarm(foo$x, pwcol = colors, pch = 16, ylab = "Factor 5", xlab = "", cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+# legend("top", legend =  levels(MC)[1:3], title = "Stress levels", pch = 16, col = col4MC[1:3], ncol = 4, inset=c(0,-0.2), cex=1.2, box.lwd = 0, box.col = "white")
+dev.off()
+
+
+
+
+pdf("/Users/ricard/MOFA_CLL/stress_factor/out/beeswarm1.pdf", width = 5, height = 5, useDingbats=F)
+plotFactorBeeswarm(model, factors=stress_factor, color_by="TNF", showMissing = F)
+dev.off()
+```
+
+<!-- Scatterplots of latent variables -->
+```{r}
+
+# p <- ggplot(df, aes(x=x ,y=y, color=cluster, shape=ighv)) +
+#   geom_point(size=rel(2.0)) +
+#   # scale_colour_discrete(name = "IGHV status", labels=c("Unmutated", "Mutated")) +
+#   xlab("Stress factor") + ylab("IGHV factor") +
+#   scale_shape_discrete(labels=c("Mutated","Unmutated")) +
+#   # scale_color_discrete(labels=c("Non-stressed","Stressed")) +
+#   guides(shape=guide_legend(title="IGHV status"), color=guide_legend(title="Stress status")) +
+#   theme_scatter()
+# print(p)
+
+# p <- ggplot(df, aes(x=x ,y=y, color=cluster)) +
+#   geom_point(size=rel(2.0)) +
+#   # scale_colour_discrete(name = "IGHV status", labels=c("Unmutated", "Mutated")) +
+#   xlab("Stress factor") + ylab("IGHV factor") +
+#   scale_shape_discrete(labels=c("Mutated","Unmutated")) +
+#   # scale_color_discrete(labels=c("Non-stressed","Stressed")) +
+#   guides(color=guide_legend(title="Stress status")) +
+#   theme_scatter()
+# print(p)
+
+# pdf("/Users/ricard/CLL/ricard_analysis/out/stress/scatterplot.pdf", width = 6.5, height = 5, useDingbats = F)
+# print(p)
+# dev.off()
+```
+
+
+<!-- Inspect mRNA view -->
+
+Plot weights
+```{r}
+pdf("/Users/ricard/MOFA_CLL/stress_factor/out/all_weights.pdf", width = 6.5, height = 5, useDingbats = F)
+plotWeights(model, view="mRNA", factor=stress_factor, nfeatures = 6)
+dev.off()
+
+pdf("/Users/ricard/MOFA_CLL/stress_factor/out/top_weights.pdf", width = 6.5, height = 5, useDingbats = F)
+plotTopWeights(model, view="mRNA", factor=stress_factor, nfeatures=6, abs=T)
+dev.off()
+```
+
+Plot input data for selected features
+```{r}
+pdf("/Users/ricard/MOFA_CLL/stress_factor/out/heatmap_top.pdf", width = 7, height = 4.5, useDingbats = F)
+plotDataHeatmap(model, view="mRNA", factor=stress_factor, features=6, transpose=T,
+                cluster_cols=F, cluster_rows=T, main="", show_rownames=T, show_colnames=F)
+dev.off()
+```
+
+
+Gene ontology enrichment analysis
+```{r}
+
+```
+
+STOP HERE
+
+<!-- Inspect drug response view -->
+
+Load and parse drug response data
+```{r}
+# data(drugs, package="pace")
+load("/Users/ricard/data/CLL/pace/data/drugs.RData")
+
+drugData <- getViab(
+  file = "/Users/ricard/data/CLL/pace/data/lpdAll.RData",
+  pat2include = MOFAtools::sampleNames(model),
+  badDrugs=c("D_008","D_025"), 
+  conc2include = 1:5,
+  targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 
+  conc4targeted = 1:5,
+  chemoDrugs = c("D_006", "D_159", "D_010"),
+  conc4chemo = 1:5,
+  effectNum = 4,
+  effectVal = 0.7,
+  viab = 0.6, 
+  maxval = 1.1,
+  outdir = "/tmp"
+)
+
+
+# Remove ranges
+drugData <- drugData[,!stringr::str_detect(colnames(drugData),":")]
+
+# Extract weights
+drugWeights <- getExpectations(model,"W")[["Drugs"]]
+rownames(drugWeights) <- paste(drugs[substr(rownames(drugWeights),1,5),"name"], substr(rownames(drugWeights),6,8), sep="")
+foo <- reshape2::melt(drugWeights, varnames=c("drugconc", "factor"), value.name="weight") %>% as.data.table
+
+# Scale weights (before taking means)
+# foo[,weight:=abs(weight)] %>% .[,weight:=weight/max(weight), by="factor"]
+
+# Extract data
+colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
+bar <- reshape2::melt(drugData, varnames=c("sample", "drugconc"), value.name="viab") %>% as.data.table 
+
+# Join
+foobar <- merge(foo,bar, by="drugconc", allow.cartesian=TRUE) %>% 
+  .[,drugconc:=as.character(drugconc)] %>%
+  .[,drug:=sapply(strsplit(drugconc, "_"), function(l) l[1])] %>%
+  .[,conc:=sapply(strsplit(drugconc, "_"), function(l) l[2])] %>%
+  .[,category:=drugs$target_category[match(drug, drugs$name)]] %>%
+  .[,target:=drugs$main_targets[match(drug, drugs$name)]] %>%
+  .[,pathway:=drugs$pathway[match(drug, drugs$name)]] %>%
+  setkey(drug)
+
+
+# Remove missing cases
+foobar <- foobar[complete.cases(foobar),]
+
+# Remove uninteresting drugs
+foobar <- foobar[!drug %in% c("everolimus","BAY 11-70","SGI-1776","sunitinib","chaetoglobosin A","chaetocin","vorinostat","TAE684","SGX-523","saracatinib","KU−60019","AZD7762","gefitinib","encorafenib","rabusertib","ibrutinib","spebrutinib","CCT241533","afatinib","PRT06607 HCL")]
+
+# Remove uninteresting pathways 
+foobar <- foobar[!category %in% c("mTOR","NFkB","PIM","Angiogenesis","Cytoskeleton","Epigenome","ALK","MET","Cell cycle control","Other","HSP90","PI3K/AKT","JAK/STAT")]
+foobar$category <- factor(foobar$category, levels=unique(foobar$category))
+
+```
+
+<!-- Inspect weights in the drug response view -->
+```{r dotplot_drugs, echo=FALSE}
+ndrugs <- 9
+asd <- foobar[factor==stress_factor] %>% .[,.(weight=mean(weight)),by=c("drug","category","target","pathway")] %>%
+  .[,weight:=abs(weight)] %>% .[,weight:=weight/max(weight)] %>% setkey(weight) %>% tail(n=ndrugs) %>% .[,drug:=factor(drug,levels=drug)]
+
+# Assign colors
+# asd[,color:=sample_colors(length(unique(category)))[as.numeric(category)]]
+
+p <- ggplot(asd, aes(x=drug, y=weight, color=category)) +
+  geom_point(size=3) +
+  geom_segment(aes(xend=drug, yend=0), size=1.6) +
+  xlab("") + ylab("Mean Relative Loading on factor 5") +
+  coord_flip() +
+  guides(color=guide_legend(title="Drug category")) +
+  theme(
+    axis.text.y = element_text(size = rel(1.7), color = "black"),
+    # axis.text.y = element_text(size = rel(1), color = "black"),
+    axis.text.x = element_text(size = rel(1.7), color = "black", angle=90, hjust=1, vjust=0.5),
+    # axis.title.y = element_text(size = rel(1.3), margin = margin(0,15,0,0)),
+    axis.title.x = element_text(size = rel(1.7), margin = margin(15,0,0,0)),
+    axis.line = element_line(colour = "black", size = 0.5),
+    axis.ticks = element_line(colour = "black", size = 0.75),
+    panel.border = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    legend.key = element_rect(fill = "white"),
+    legend.text = element_text(size=rel(1.2)),
+    legend.title = element_text(size=rel(1.3)),
+    legend.position = "right"
+  )
+print(p)
+# 
+# pdf("/Users/ricard/mofa_cll/stress_factor/out/drug_weights.pdf", width = 8.5, height = 6, useDingbats = F)
+# print(p)
+# dev.off()
+```
+
+Load data
+```{r}
+interesting_drugs <- c("SD51","SD07","MIS-43")
+
+drugData <- getViab(
+  file = "/Users/ricard/data/CLL/pace/data/lpdAll.RData",
+  pat2include = MOFAtools::sampleNames(model),
+  badDrugs=c("D_008","D_025"), 
+  conc2include = 1:5,
+  targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 
+  conc4targeted = 1:5,
+  chemoDrugs = c("D_006", "D_159", "D_010"),
+  conc4chemo = 1:5,
+  effectNum = 4,
+  effectVal = 0.7,
+  viab = 0.6, 
+  maxval = 1.1,
+  outdir = "/tmp"
+)
+drugData <- drugData[,!stringr::str_detect(colnames(drugData),":")]
+colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
+tmp <- reshape2::melt(drugData, varnames=c("sample", "drugconc"), value.name="viab") %>% as.data.table %>%
+  .[,drugconc:=as.character(drugconc)] %>%
+  .[,drug:=sapply(strsplit(drugconc, "_"), function(l) l[1])] %>%
+  .[,conc:=sapply(strsplit(drugconc, "_"), function(l) l[2])] %>%
+  .[,drugconc:=NULL] %>%
+  .[drug%in%interesting_drugs] %>%
+  .[,conc:=factor(conc,levels=c("5","4","3","2","1"))] %>%
+  merge(df[,c("sample","x","cluster")], by="sample")
+```
+
+<!-- Heatmaps for the top three drugs -->
+
+D_141_4: SD51 concentration 4
+D_127_3: SD07 concentration 3
+D_149: MIS-43 concentration 4
+```{r}
+# plotTopWeights(model, view="Drugs", factor=stress_factor)
+foo <- rbind(
+  tmp[drug=="SD51" & conc=="4"],
+  tmp[drug=="SD07" & conc=="3"],
+  tmp[drug=="MIS-43" & conc=="4"]
+  
+)
+foo <- foo[,c("sample","drug","viab")] %>% dcast(sample~drug, value.var="viab") %>% 
+  as.data.frame %>% tibble::column_to_rownames("sample") %>% as.matrix %>% t
+order_patients <- df$sample[order(df$x)] 
+order_patients <- order_patients[order_patients %in% colnames(foo)]
+
+anno_df <- data.frame(
+  row.names = order_patients,
+  factor = df %>% setkey(sample) %>% .[order_patients] %>% .$x
+)
+
+pdf("/Users/ricard/mofa_cll/stress_factor/out/drug_heatmap.pdf", width = 8.5, height = 6, useDingbats = F)
+# col <- colorRampPalette(c("navy", mid="white", high="red"))
+col <- brewer.pal(n = 9, name = "YlGn")
+# col <- brewer.pal(n = 9, name = "Blues")
+pheatmap::pheatmap(foo[,order_patients], cluster_rows = T, cluster_cols = F, show_rownames = T, show_colnames = F, col=col)
+dev.off()
+```
+
+<!-- scatterplots for the top three drugs -->
+```{r}
+
+p <- ggplot(tmp[drug=="SD07" & conc%in%c("1","2","3","4","5")], aes(x=x, y=viab)) +
+  geom_point() +
+  stat_smooth(method="lm") +
+  # stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y="mean", geom="line", size=1.5)  +
+  # stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data = mean_se, geom = "errorbar", width=0.5, alpha=0.5) +
+  xlab("Concentration") + ylab("Cellular viability") +
+  scale_color_manual(values=c("red","blue"), labels=c("HSP low","HSP high")) +
+  scale_y_continuous(expand=c(0.00,0.05)) +
+  facet_wrap(~conc, nrow = 1) +
+  theme_bw() + 
+  theme(
+    plot.title = element_text(size=rel(2.0), hjust=0.5),
+    axis.text = element_text(size = rel(1), color = "black"),
+    # axis.title = element_text(size = titlesize),
+    axis.title.y = element_text(size = rel(1.3), margin = margin(0, 15, 0, 0)),
+    axis.title.x = element_text(size = rel(1.3), margin = margin(15, 0, 0, 0)),
+    axis.line = element_line(colour = "black", size = 0.5),
+    axis.ticks = element_line(colour = "black", size = 0.5),
+    # panel.border = element_blank(),
+    # panel.grid.major = element_blank(),
+    # panel.grid.minor = element_blank(),
+    # panel.background = element_blank(),
+    legend.key = element_rect(fill = "white"),
+    legend.position = "right",
+    strip.text = element_text(size=rel(2.0)),
+    legend.text = element_text(size = rel(1.2)),
+    legend.title = element_text(size = rel(1.5))
+  )
+print(p)
+
+```
+
+
+
+<!-- Drug response curves for the top weighted drugs: SD51, SD07 -->
+```{r}
+
+interesting_drugs1 <- c("SD51","SD07")
+# interesting_drugs2 <- c("fludarabine","nutlin-3","doxorubicine")
+
+drugData <- getViab(
+  file = "/Users/ricard/data/CLL/pace/data/lpdAll.RData",
+  pat2include = MOFAtools::sampleNames(model),
+  badDrugs=c("D_008","D_025"), 
+  conc2include = 1:5,
+  targetedDrugs= c("D_002", "D_003", "D_166", "D_082", "D_079", "D_012", "D_030", "D_063", "D_083") , 
+  conc4targeted = 1:5,
+  chemoDrugs = c("D_006", "D_159", "D_010"),
+  conc4chemo = 1:5,
+  effectNum = 4,
+  effectVal = 0.7,
+  viab = 0.6, 
+  maxval = 1.1,
+  outdir = "/tmp"
+)
+drugData <- drugData[,!stringr::str_detect(colnames(drugData),":")]
+colnames(drugData) <- paste(drugs[substr(colnames(drugData),1,5),"name"], substr(colnames(drugData),6,8), sep="")
+tmp <- reshape2::melt(drugData, varnames=c("sample", "drugconc"), value.name="viab") %>% as.data.table %>%
+  .[,drugconc:=as.character(drugconc)] %>%
+  .[,drug:=sapply(strsplit(drugconc, "_"), function(l) l[1])] %>%
+  .[,conc:=sapply(strsplit(drugconc, "_"), function(l) l[2])] %>%
+  .[,drugconc:=NULL] %>%
+  .[drug%in%interesting_drugs1] %>% 
+  merge(df[,c("sample","cluster")], by="sample")
+
+tmp[,conc:=factor(conc,levels=c("5","4","3","2","1"))]
+
+f <- function(x) { return(data.frame(y=mean(x), ymin=mean(x)-sd(x), ymax=mean(x)+sd(x))) }
+p <- ggplot(tmp, aes(x=conc, y=viab)) +
+  stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.y="mean", geom="line", size=1.5)  +
+  stat_summary(aes(group=interaction(drug,cluster), color=cluster), fun.data = mean_se, geom = "errorbar", width=0.5, alpha=0.5) +
+  xlab("Concentration") + ylab("Cellular viability") +
+  scale_color_manual(values=c("red","blue"), labels=c("HSP low","HSP high")) +
+  scale_y_continuous(expand=c(0.00,0.05)) +
+  facet_wrap(~drug) +
+  theme_bw() + 
+  theme(
+    plot.title = element_text(size=rel(2.0), hjust=0.5),
+    axis.text = element_text(size = rel(1), color = "black"),
+    # axis.title = element_text(size = titlesize),
+    axis.title.y = element_text(size = rel(1.3), margin = margin(0, 15, 0, 0)),
+    axis.title.x = element_text(size = rel(1.3), margin = margin(15, 0, 0, 0)),
+    axis.line = element_line(colour = "black", size = 0.5),
+    axis.ticks = element_line(colour = "black", size = 0.5),
+    # panel.border = element_blank(),
+    # panel.grid.major = element_blank(),
+    # panel.grid.minor = element_blank(),
+    # panel.background = element_blank(),
+    legend.key = element_rect(fill = "white"),
+    legend.position = "right",
+    strip.text = element_text(size=rel(2.0)),
+    legend.text = element_text(size = rel(1.2)),
+    legend.title = element_text(size = rel(1.5))
+  )
+print(p)
+
+# pdf("/Users/ricard/CLL/biology/out/stress/drug_curves.pdf", width = 8.5, height = 5, useDingbats = F)
+# print(p)
+# dev.off()
+```
+
+

@@ -1,0 +1,103 @@
+---
+title: "Running MOFA with one view"
+output:
+  BiocStyle::html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+devtools::load_all("/Users/ricard/mofa/MOFAtools")
+# library(MOFAtools)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r}
+```
+
+<!-- Define I/O and options -->
+```{r}
+io <- list()
+io$outdir <- "/Users/ricard/mofa_rebuttal/mofa_oneview/out"
+
+opts <- list()
+opts$views <- c("Mutations")
+# opts$views <- c("Mutations","Drugs","Methylation","mRNA")
+```
+
+<!-- Load data -->
+```{r}
+data("CLL_data")
+# CLL_data <- lapply(CLL_data,t)
+```
+
+<!-- Run MOFA for each view separately -->
+```{r}
+single_mofa_models <- list()
+for (i in opts$views) {
+  single_mofa_models[[i]] <- createMOFAobject(CLL_data[i])
+  
+  # Define I/O options
+  DirOptions <- list("dataDir" = tempdir(), "outFile" = paste0(io$outdir, "/",i,".hdf5"))
+    
+  # Define data options
+  DataOptions <- getDefaultDataOpts()
+  
+  # Define training options
+  TrainOptions <- getDefaultTrainOpts()
+  TrainOptions$learnFactors <- F
+  # TrainOptions$DropFactorThreshold <- 0.03
+  TrainOptions$tolerance <- 0.01
+  # TrainOptions$verbose <- T
+  TrainOptions$maxiter <- 1000
+  
+  # Define model options  
+  ModelOptions <- getDefaultModelOpts(single_mofa_models[[i]])
+  ModelOptions$numFactors <- 10
+    
+  # Prepare MOFA object for training
+  single_mofa_models[[i]] <- prepareMOFA(single_mofa_models[[i]], DataOptions = DataOptions, DirOptions = DirOptions,
+                     ModelOptions = ModelOptions, TrainOptions = TrainOptions)
+    
+  # Run MOFA
+  single_mofa_models[[i]] <- runMOFA(single_mofa_models[[i]], DirOptions, mofaPath="/Users/ricard/anaconda2/bin/mofa")
+}
+```
+
+<!-- Run joint MOFA -->
+```{r}
+joint_mofa_model <- createMOFAobject(CLL_data)
+
+# Define I/O options
+DirOptions <- list("dataDir" = tempdir(), "outFile" = paste0(io$outdir, "/joint.hdf5"))
+  
+# Define data options
+DataOptions <- getDefaultDataOpts()
+
+# Define training options
+TrainOptions <- getDefaultTrainOpts()
+TrainOptions$learnFactors <- T
+
+# Define model options  
+ModelOptions <- getDefaultModelOpts(joint_mofa_model)
+ModelOptions$numFactors <- 15
+  
+# Prepare MOFA object for training
+joint_mofa_model <- prepareMOFA(joint_mofa_model, DataOptions = DataOptions, DirOptions = DirOptions,
+                   ModelOptions = ModelOptions, TrainOptions = TrainOptions)
+
+# Run
+joint_mofa_model <- runMOFA(joint_mofa_model, DirOptions, mofaPath="/Users/ricard/anaconda2/bin/mofa")
+```
+
+<!-- Explore stuff... -->
+```{r}
+m <- single_mofa_models[["Mutations"]]
+
+plotFactorCor(m)
+
+plotFactorScatter(m, c("1","2"))
+
+```
+
