@@ -60,47 +60,49 @@ summaries <- lapply(names(results_small), function(dfnm){
   summaryDF <- df %>% dplyr::summarize(mean_MSE = mean(MSE), sd = sd(MSE), n = length(MSE))
   summaryDF$se <- summaryDF$sd/sqrt(summaryDF$n)
   summaryDF
-  #take out guess (use Mean as baseline)
-  summaryDF %<>% filter(method!="Guess")
+  #take out guess (use Mean as baseline) and GFA due to strong dependence on K (separate figure)
+  summaryDF %<>% filter(method!="Guess" & !grepl("GFA", method))
 })
 names(summaries) <- names(results_small)
 ``` 
 
 # Plots
-```{r Imputation_figure, fig.width=10, fig.height=5}
+```{r Imputation_indiv, fig.width=5, fig.height=5}
 # random
 gg_summary_random <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method))# + ylim(c(0.0075,0.02))
-
 gg_summary_random <- gg_summary_random + geom_point()  + 
   xlab("Precentage of values missing") + ylab("Mean Squared Error") +
   geom_errorbar(aes(ymin=mean_MSE- 2*se, ymax=mean_MSE + 2*se), width=.01) +
   geom_line() +
-  guides(col=F)+
   theme_bw(base_size=18) +
   theme(plot.title = element_text(size=rel(1)),
         axis.title= element_text(size=rel(0.85)),
         axis.text = element_text(color="black"))#+
   # ggtitle(paste("Values missing at random"))
-# gg_summary_random
-
-gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) 
+gg_summary_random <- gg_summary_random + guides(col=F)
+gg_summary_random
 
 # full cases
+gg_summary_full <- ggplot(filter(summaries[["full"]], FullCasesMissing.viab>1), aes(x=FullCasesMissing.viab, y=mean_MSE, col=method)) 
 gg_summary_full <-gg_summary_full +
     geom_errorbar(aes(ymin=mean_MSE-2*se, ymax=mean_MSE +2*se), width=1) +
-    geom_line() +guides(col=F) + theme_bw(base_size=18)+
+    geom_line()  + theme_bw(base_size=18)+
     theme(plot.title = element_text(size=rel(1)),
           axis.title= element_text(size=rel(0.85)),
         axis.text = element_text(color="black")) +
     geom_point()  +xlab("Number of patients missing (out of n=121)") +
     ylab("") #+ ggtitle(paste("Patients missing all measurements"))
 
+gg_summary_full
+gg_summary_full <- gg_summary_full +guides(col=F)
+
 # legend
 gg_legend_sum <- ggplot(summaries[["random"]], aes(x=pNA.viab, y=mean_MSE, col=method)) + geom_line() +geom_point() +theme_bw(base_size=18)
 gg_legend_sum <- get_legend(gg_legend_sum)
-
-# arrange all plots
-library(cowplot)
-plot_grid(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, rel_widths = c(10,10,3), labels=c("a","b",""), label_size = 18)#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
 ```
 
+```{r Imputation_figure, fig.width=10, fig.height=5}
+# arrange all plots
+library(cowplot)
+plot_grid(gg_summary_random, gg_summary_full, gg_legend_sum, ncol=3, rel_widths = c(10,10,3), labels=c("a","b",""), label_size = 24)#, top=textGrob("Imputation of drug response",gp=gpar(fontsize=15,font=1)))
+```
