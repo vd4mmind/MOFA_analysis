@@ -3,6 +3,7 @@
 ###################
 
 from time import time
+import numpy as np
 import scipy as s
 import scipy.stats as stats
 import os
@@ -72,6 +73,16 @@ def generate_data(outfile, M=3, N=100, K=10, D=1000):
     elif lik == 'bernoulli':
       data["Y"][i] = Y_bernoulli[i]
 
+
+  # mask 5% of the data
+  p2Mask = 0.05
+  for i in range(M):
+      idxMask = np.zeros(N*D[i])
+      idxMask[:int(round(N*D[i]*p2Mask))] = 1
+      np.random.shuffle(idxMask)
+      idxMask = np.reshape(idxMask, [N, D[i]])
+      data["Y"][i] = data["Y"][i].mask(idxMask==1)
+
   # Save data
   for m in xrange(M):
     s.savetxt(outfile+"_"+str(m)+".txt", data["Y"][m], fmt='%.3e', delimiter=' ')
@@ -81,14 +92,14 @@ def generate_data(outfile, M=3, N=100, K=10, D=1000):
 
 if __name__ == "__main__":
 
-  outdir = '/hps/nobackup/stegle/users/ricard/MOFA/rebuttal/scalability/input'
-
+  outdir = '/g/huber/users/bvelten/tmp/MOFA/runtime/withNAs/data'
+  #outdir = '/Users/bvelten/Documents/MOFA/CLL_MOFA_data/Analysis/simulations_runtime/withNAs/data'
   K_vals = [ 5, 10, 15, 20, 25, 30, 35, 40, 45, 50 ]
   # K_vals = s.linspace(5.0, 99.0, num=20, dtype=int)
   print "Generating K..."
   for k in K_vals:
     outprefix = "%s/K/%d" % (outdir, k)
-    # generate_data(outprefix, K=k)
+    generate_data(outprefix, K=k)
 
 
   D_vals = [ 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000 ]
@@ -97,7 +108,7 @@ if __name__ == "__main__":
   print "Generating D..."
   for d in D_vals:
     outprefix = "%s/D/%d" % (outdir, d)
-    # generate_data(outprefix, D=d)
+    generate_data(outprefix, D=d)
 
 
   M_vals = [ 1, 3, 5, 7, 9, 11, 13, 15 ]
@@ -105,7 +116,7 @@ if __name__ == "__main__":
   print "Generating M..."
   for m in M_vals:
     outprefix = "%s/M/%d" % (outdir, m)
-    # generate_data(outprefix, M=m)
+    generate_data(outprefix, M=m)
 
 
   N_vals = [ 50, 100, 150, 200, 250, 300, 350, 400, 450, 500 ]
