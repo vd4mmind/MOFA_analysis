@@ -1,7 +1,7 @@
 Multi-Omics factor analysis - a framework for unsupervised integration of multi-omic data sets
 =========
 
-This repository contains the source code to reproduce the figures of the manuscript ***MultiOmics Factor Analysis disentangles heterogeneity in blood cancer*** ([bioRxiv](https://www.biorxiv.org/content/early/2017/11/10/217554)).  
+This repository contains the source code to reproduce the figures of the manuscript ***Multi-Omics factor analysis - a framework for unsupervised integration of multi-omic data sets*** ([bioRxiv](https://www.biorxiv.org/content/early/2018/04/11/217554)).  
 If you want to use MOFA, [here](https://github.com/bioFAM/MOFA) is the github repository.
 
 Abstract
