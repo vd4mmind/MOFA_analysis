@@ -26,9 +26,9 @@ Content
     * `/nongaussian/`: assessing of non-gaussian likelihoods
 
 * `/GFA_iCluster_comparisons/`: comparison of MOFA with GFA and iCluster
-* `/simulations/`: comparison on simulated data
-* `/scalability/`: comparison in terms of scalability
-* `/CLL/`: comparison on the CLL data
+    * `/simulations/`: comparison on simulated data
+    * `/scalability/`: comparison in terms of scalability
+    * `/CLL/`: comparison on the CLL data
 
 Contact
 -------
