@@ -1,0 +1,1383 @@
+---
+title: "Vignette illustrating the use of MOFA for disentangling patient heterogeneity in chronic lymphocytic leukemia"
+author: "Britta Velten and Ricard Argelaguet"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_depth: 2
+---
+
+
+# Introduction
+This vignette show how to MOFA can be used to disentangle patient heterogeneity in a multi-omic data set on chronic lymphocytic leukemia (CLL). It contains all major analysis steps and findings presented in Argelaguet, Velten et al. (2018) on the CLL data.
+
+```{r, message=F, warning=F}
+library(MOFAtools)
+library(dplyr)
+library(reshape2)
+library(gridExtra)
+library(ggplot2)
+library(GGally)
+library(magrittr)
+library(cowplot)
+library(beeswarm)
+library(ggpubr)
+library(ClusterR)
+library(pheatmap)
+library(ggbeeswarm)
+library(RColorBrewer)
+library(tidyr)
+library(glmnet)
+library(survival)
+library(Hmisc)
+library(BloodCancerMultiOmics2017)
+source("plotting_utils.R")
+options(stringsAsFactors = FALSE)
+```
+
+# Step 1: Load data and create MOFA object
+Here we load the pre-processed CLL data which is part of the MOFAtools pacakges. The original raw data can be obtained from [Dietrich et al, 2018](https://www.jci.org/articles/view/93801) and are available at the European Genome-phenome Archive under accession EGAS00001001746 and data tables as R objects can be downloaded from [http://pace.embl.de/](http://pace.embl.de/) and the R package [BloodCancerOmics2017](http://bioconductor.org/packages/devel/data/experiment/html/BloodCancerMultiOmics2017.html). Briefly, we included the following data for the training of MOFA: Mutations (>= 3 occurences), Methylation (top 1%, no sex chromosomes), mRNA (top 5000 most variable genes excludign the Y chromosome) and drug responses for all samples that have data in at least two views (N=200). The scripts for pre-processing the data starting from the original study can be found [here](https://github.com/PMBio/MOFA_CLL/tree/master/CLL_Analysis/pre-processing).
+
+```{r load_data}
+# Load data: list containing matrices for mRNA, Methylation, Drug Response and Mutation data
+data("CLL_data")
+# samples are columns, features are rows
+sapply(CLL_data, dim)
+```
+
+There are two options to input data to MOFA:
+
+- Option 1: base R approach using a list of matrices  
+- Option 2: Create MOFA from a MultiAssayExperiment (BioConduc)
+
+## Option 1: Create MOFA from a list of matrices
+If using the base R approach, you simply need to provide a list of matrices where features are rows and samples are columns. Importantly, the samples need to be aligned. Missing values/assays should be filled with NAs.
+```{r create_from_list}
+MOFAobject <- createMOFAobject(CLL_data)
+MOFAobject
+```
+
+## Option 2: Create MOFA from a MultiAssayExperiment
+If using the Bioconductor approach, you need to provide or create a [MultiAssayExperiment](https://bioconductor.org/packages/release/bioc/html/MultiAssayExperiment.html) object and then use it to build the MOFA object. For example, starting from a list of matrices where features are rows and samples are columns, this can be easily constructed as follows:
+```{r create_from_MAE}
+library(MultiAssayExperiment)
+
+ # Load sample metadata (colData): Sex and Diagnosis
+data("CLL_covariates")
+head(CLL_covariates)
+
+# Create MultiAssayExperiment object 
+mae_CLL <- MultiAssayExperiment(experiments = CLL_data,
+                                colData = CLL_covariates)
+
+# Build the MOFA object
+MOFAobject <- createMOFAobject(mae_CLL)
+```
+
+## Overview of training data
+The function `plotTilesData` can be used to obtain an overview of the data stored in the object for training (as in Figure 2a). For each sample it shows in which views data are available.
+```{r tile_plot}
+myPalette <- c(RColorBrewer::brewer.pal(8,"Dark2"),RColorBrewer::brewer.pal(9,"Set1"), RColorBrewer::brewer.pal(3,"Greens")[3])
+cols4omics <- myPalette[c(6,10,18,2)]
+plotTilesData(MOFAobject, colors=cols4omics)
+```
+
+# Step 2: Training of MOFA and model selection
+
+Once an untrained MOFAobject has been created, the next step is model training. This part of the pipeline is implemented in Python, so first of all make sure you have the corresponding package installed (see installation instructions in the README file). The model can either be trained directly from the command line (see running instructions, it is very simple) or using following R wrapper.
+
+## Model training
+
+### Specify in- and output paths
+In DirOptions places can be specified for saving the training data as .txt files (as required for the model training in Python) and the resulting fitted models as .hdf5 files.
+This can also be set to temporary directories as below.
+```{r dir_options}
+DirOptions <- list(
+  "dataDir" = tempdir(), # Folder to store the input matrices as .txt files, it can be a simple temporary folder
+  "outFile" = tempfile() # Output file of the model (use .hdf5 extension)
+)
+```
+
+### Define model options
+The most important options the users can define are:
+
+* *numFactors*: initial number of factors (default of 25)
+* *likelihoods*: likelihood for each view, gaussian for continuous data, bernoulli for binary data and poisson for count data. If not provided, the model tries to guess it from the data.
+* *sparsity*: Are sparse factor loadings desired (default YES)
+* *learnIntercept*: Should an intercept be learnt in the model (default TRUE). Setting this to FALSE is usually only recommended in the case of centered gaussian data.
+
+```{r model_options}
+ModelOptions <- getDefaultModelOptions(MOFAobject)
+ModelOptions
+```
+
+### Define training options
+The most important options the users can define are:
+
+* *maxiter*: Maximum number of iterations, ideally set it large enough and use the convergence criteria
+* *tolerance*: Convergence threshold based on change in the evidence lower bound. We recommend you stick to the default value.
+* *DropFactorThreshold*: Threshold on fraction of variance explained to define inactive factors. That is, factors explaining less than 'DropFactorThreshold' percentage of variation in all views will be dropped during training.
+* *learnFactors*: Should the number of factor be learnt during training? (default YES). If this is disabled, the model will keep all factors as defined in `ModelOptions$numFactors`.
+* *seed*: A seed for model initilization to be able to reproduce the exact same fit.
+
+
+```{r train_options}
+TrainOptions <- getDefaultTrainOptions()
+TrainOptions
+```
+
+### Define data options
+Options on the data
+```{r data_options}
+DataOptions <- getDefaultDataOptions()
+DataOptions
+```
+
+### Prepare MOFA
+`prepareMOFA` internally performs a set of sanity checks, fills the TrainOpts and ModelOpts slots of the MOFAmodel object and it also creates a set of temporary files with the input matrices that will be loaded by the Python core implementation
+```{r prepareMOFA}
+MOFAobject <- prepareMOFA(MOFAobject, 
+                      DirOptions = DirOptions,
+                      ModelOptions = ModelOptions,
+                      TrainOptions = TrainOptions,
+                      DataOptions = DataOptions
+)
+```
+
+### Run MOFA
+This step can take some time (around 40 min with default parameters), for illustration we provide an existing trained model. mofaPath specifies the path to the mofa installation (e.g. mofaPath = "/Users/XY/anaconda2/bin/mofa").
+```{r runMOFA, eval=FALSE}
+# not run
+MOFAobject <- runMOFA(MOFAobject, DirOptions, mofaPath = "/Users/bvelten/anaconda2/bin/mofa")
+```
+
+## Model selection
+We recommend running MOFA multiple times on a dataset and selecting a final model for analysis based on the ELBO statistics as stored in each trained MOFA object.
+Here, we load the trained models as resulting from the last step, explore their consistency and select a model for downstream analyses.
+
+### Load trained models
+In total, 25 models were trained on patients on the CLL data with the default options. In particular, the number of factors and an intercept term is learned, dropping inactive factors at a threshold of 2% explained variation. For the methylation M-values, the normalized expression values and the durg responses we used a Gaussian likelihood, the mutations are modelled by a Bernoulli likelihood (see detail model and training parameters above) 
+
+Here we show the steps to select the final model. They are not evaluated but once several models have been trained, mofaDir can be set to their directory and the following chunks can be run.
+```{r load_models, eval=F}
+mofaDir <- "../data/MOFA_fits/"
+files <- list.files(mofaDir)
+files <- files[grepl(".hdf5",files)]
+
+# load all trained MOFA object
+AllModels <- lapply(files, function (filenm){
+  modeltmp <- loadModel(file.path(mofaDir, filenm), sortFactors = T)
+})
+names(AllModels) <- sub(".hdf5","", files)
+```
+
+### Optional: Change feautre names of the models to nicer labels
+`featureNames` and `factorNames` can be used to change the names in the MOFAobject.
+```{r get_annotations}
+# get gene annotations from ENSEMBL
+mRNA_file <- "../data/Hsapiens_genes_BioMart.75.txt"
+mRNA = read.csv(file=mRNA_file,header=T,sep="\t",stringsAsFactors=F)
+
+# get drug annotations from BloodCancerMultiOmics2017 package
+data("drugs", package = "BloodCancerMultiOmics2017")
+```
+
+```{r set_names, eval=F}
+# set nice feature names
+AllModels <- lapply(AllModels, function(model){
+  #mRNA
+  featureNames(model)$mRNA <- mRNA$symbol[match(featureNames(model)$mRNA, mRNA$ens_id)]
+  # Drugs
+  featureNames(model)$Drugs <- paste(drugs[substr(featureNames(model)$Drugs,1,5),"name"],
+                                              substr(featureNames(model)$Drugs,6,8), sep="")
+  # Mutations
+  featureNames(model)$Mutations[featureNames(model)$Mutations=="del13q14_any"] <- "del13q14"
+  model
+})
+```
+
+### Check the consistency of the results from different trials
+As the optimization landscape is non-convex, the results from different trials will vary depending on the random initilizations. Here, we test the consistency of factors across trials and visualize the number of inferred factors and the ELBO for the different models.
+
+```{r compare_models, eval=F}
+compare_models(AllModels)
+compare_factors(AllModels)
+```
+
+### Select a model based on highest ELBO
+Based on the ELBO we select the best model for downstream analyses using the `select_model` function.
+```{r select_model, eval=F}
+MOFAobject <- select_model(AllModels)
+MOFAobject
+```
+
+The model selected model in the manuscript is also part of the MOFAtools package and can be directly loaded as follows. Note that this model has depreceated parameters compared to the current MOFA version. Its dropping parameter correspond to 2% in the updated version.
+```{r load_model4paper}
+# not run
+filepath <- system.file("extdata", "CLL_model.hdf5", package = "MOFAtools")
+MOFAobject <- loadModel(filepath, MOFAobject, r2_threshold=0.02)
+
+  # set nice names
+  featureNames(MOFAobject)$mRNA <- mRNA$symbol[match(featureNames(MOFAobject)$mRNA, mRNA$ens_id)]
+  featureNames(MOFAobject)$Drugs <- paste(drugs[substr(featureNames(MOFAobject)$Drugs,1,5),"name"],
+                                              substr(featureNames(MOFAobject)$Drugs,6,8), sep="")
+  featureNames(MOFAobject)$Mutations[featureNames(MOFAobject)$Mutations=="del13q14_any"] <- "del13q14"
+```
+
+## Other diagnostic checks of the trained model
+### Robustness of factors to downsampling of samples (Appendix Figure S7)
+See [here](https://github.com/PMBio/MOFA_CLL/blob/master/CLL_Analysis/robustness).
+
+### Correlation of latent factors
+```{r factor_correlation}
+fout <- plotFactorCor(MOFAobject)
+```
+
+### Impact on factors when training on a subset of views (Appendix Figure S8)
+See [here](https://github.com/PMBio/MOFA_CLL/tree/master/CLL_Analysis/view_subsetting).
+
+
+## Further preparations
+
+### Flip factor 1
+AS factors are rotationally invariant, weights and factor values can only interpreted relative to one another. To align factors with other covariates, we can flip them by changin the sign of the factor values and their weights, as is done here for Factor 1 to align it with the IGHV status in terms of patient's hazard ratio.
+```{r flip_factor}
+MOFAobject <- MOFAtools:::flip_factor(MOFAobject, "1")
+```
+
+### Extracting important parts of the model and covariates
+For ease-of-use we extract some interesting components of the fitted model
+```{r shortcuts}
+# Training data
+data <- getTrainData(MOFAobject)
+# Number of factors
+K <- getDimensions(MOFAobject)$K
+# Factor matrix (N x K)
+Z <- getFactors(MOFAobject)
+# List of weight matrics
+weights <- getWeights(MOFAobject)
+```
+
+### Extracting external information on the samples and features
+The BloodCancerMultiOmics2017 R package contains further data on the samples and feautres that was not used in training and can be helpful for annotation of the factors and downstream analyses such as prediction of clinical outcomes. 
+```{r metadata}
+data("patmeta", package = "BloodCancerMultiOmics2017")
+recurrent_muts <- t(data$Mutations[rowSums(data$Mutations, na.rm = T) >=5, ])
+covariates <- cbind(recurrent_muts[,!grepl("IGHV", colnames(recurrent_muts))], patmeta[rownames(Z),])
+colnames(covariates)[grep("Gender",colnames(covariates) )] <- "sex"
+covariates$sex <- ifelse(covariates$sex == "m", 0,1)
+colnames(covariates)[grep("Age4Main",colnames(covariates) )] <- "age"
+colnames(covariates)[grep("ConsClust",colnames(covariates) )] <- "MethylationCluster"
+covariates <- covariates[, !grepl("T5|T6|Age4Pilot|Age4Main|Diagnosis|died|treated|treatedAfter", colnames(covariates) )]
+covariates$missingViews <- rowSums(sapply(data, function(dat) apply(is.na(dat), 2, all)))
+covariates$patID <- rownames(covariates)
+```
+
+
+# Step 3: Overview of the trained MOFAobject (as in Figure 2)
+After training, we can explore the results from MOFA. Here we provide a semi-automated pipeline to disentangle and characterize the sources of variation (the factors) identified by MOFA.
+Part 1: Disentangling the heterogeneity:
+- Calculation of variance explained by each factor in each view
+Part 2: Characterisation of individual factors:
+- Inspection of top weighted features in the active views
+- Ordination of samples by factors to reveal clusters and graadients in the sample space
+- Feature set enrichemnt analysis in the active views (where set annotations are present, e.g. gene sets for mRNA views)
+
+For details, please read the Methods section of our paper.
+
+
+
+## R2 decomposition (Figure 2b,c)
+```{r R2_decomposition}
+plotVarianceExplained(MOFAobject)
+r2out <- calculateVarianceExplained(MOFAobject)
+```
+
+```{r R2_flipped, fig.width=10}
+# flipped version as presented in the manuscript
+p <- plotFlippedR2(MOFAobject, r2.out)
+print(p)
+```
+
+
+## Weights on Mutations view for the first two factors (Figure 2d)
+For small views: Direct inspection of weight is a good way to annotate factors, e.g. here for facotrs 1 and 2 acive in the Mutations view.
+```{r mutations_weights, fig.width = 4.4, fig.height=3}
+# Mutation weights on factor 1
+showTopWeightsAndColor(MOFAobject, "Mutations", "1" , nfeatures = 5,
+                       abs=T, Features2color = "IGHV",
+                      maxL = 1, scalePerView=T)
+
+
+# Mutation weights on factor 2
+showTopWeightsAndColor(MOFAobject, "Mutations", "2" , nfeatures = 5,
+                       abs=T, Features2color = "trisomy12",
+                       maxL = 1, scalePerView=T)
+```
+
+## Scatterplot of two most important facotrs  (Figure 2e)
+```{r scatterplot, fig.width = 5.5, fig.height = 6}
+# collect data for plot
+df = data.frame(x = Z[, "1"], y = Z[,"2"], 
+                trisomy12 = covariates$trisomy12,
+                IGHV = covariates$IGHV)
+
+# nice names for tr 12
+df$trisomy12[is.na(df$trisomy12)] <- "missing" 
+df$trisomy12[df$trisomy12 == "0"] <- "wt" 
+df$trisomy12[df$trisomy12 == "1"] <- "tr12" 
+df$trisomy12 <- factor(df$trisomy12, levels=c("wt", "tr12", "missing"))
+
+# nice names for IGHV
+df$IGHV[is.na(df$IGHV)] <- "missing" 
+df$IGHV[df$IGHV == "0"] <- "U" 
+df$IGHV[df$IGHV == "1"] <- "M" 
+df$IGHV <- factor(df$IGHV, levels=c("U", "M", "missing"))
+
+# nice names for combi
+df$IGHV_tr12 <- paste(df$IGHV, df$trisomy12, sep="-CLL, ")
+df %<>% mutate(IGHV_tr12= ifelse(grepl("missing", IGHV_tr12), "missing",IGHV_tr12))
+
+# colors and shapes for plot
+Paircolorr <- c(RColorBrewer::brewer.pal(6, "Paired")[c(1:2,5:6)], "grey")
+Shapes4plot <- c(17,19,17,19, 3)
+names(Shapes4plot) <- names(Paircolorr) <- c("U-CLL, wt", "U-CLL, tr12", "M-CLL, wt", "M-CLL, tr12", "missing")
+df$IGHV_tr12 <- factor(df$IGHV_tr12, levels=names(Paircolorr))
+
+# make plot
+titlesize <- 15
+gg <-  ggplot(df, aes(x=x, y=y, col=IGHV_tr12,shape=IGHV_tr12)) +
+  geom_point(size=2.5)  +
+  theme(plot.margin = margin(20, 20, 10, 10), 
+        axis.text = element_text(size = rel(1), color = "black"),
+        axis.title = element_text(size = titlesize), 
+        axis.title.y = element_text(size = rel(1.1),
+                                        margin = margin(0, 10, 0, 0)), 
+        axis.title.x = element_text(size = rel(1.1),
+                                        margin = margin(10, 0, 0, 0)), 
+        axis.line = element_line(color = "black", size = 0.5), 
+        axis.ticks = element_line(color = "black", size = 0.5),
+        panel.border = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        panel.background = element_blank(),
+        legend.key = element_rect(fill = "white"),
+        legend.text = element_text(size = titlesize),
+        legend.title = element_blank(),
+        legend.position = "top") +
+  scale_shape_manual(name = "Mutational status",
+                     labels= names(Shapes4plot),
+                     values=Shapes4plot) +
+  scale_color_manual(name = "Mutational status",
+                     labels= names(Paircolorr),
+                     values=Paircolorr) +
+  guides(colour = guide_legend(ncol=3),
+          shape = guide_legend(ncol=3)) +
+  xlab("Factor 1") + ylab("Factor 2") 
+
+print(gg)
+```
+
+## Enrichment Analysis (Figure 2f)
+
+We used the [reactome](http://reactome.org) gene set for enrichment analysis. Other gene sets can be used as input to FeatureSetEnrichmentAnalysis.
+```{r GSEA_prep}
+# Get reactome gene sets
+data("reactomeGS", package="MOFAtools")
+
+# use ensIDs instead of gene symbols
+# use ensIDs
+if(!all(grepl("ENS", MOFAtools::featureNames(MOFAobject)$mRNA))) {
+    symbols <- MOFAtools::featureNames(MOFAobject)$mRNA
+    MOFAtools::featureNames(MOFAobject)$mRNA <- mRNA$ens_id[match(MOFAtools::featureNames(MOFAobject)$mRNA, mRNA$symbol)]
+}
+```
+
+Calculate Enrichment
+```{r GSEA}
+gsea.out <- FeatureSetEnrichmentAnalysis(MOFAobject, "mRNA",reactomeGS,
+                                         statistical.test = "parametric",
+                                         alpha = 0.01, min.size = 15)
+names(gsea.out$sigPathways) <- colnames(Z)[-1]
+
+# set feature names back to gene symbols
+MOFAtools::featureNames(MOFAobject)$mRNA <- symbols
+```
+
+
+Make a barplot of enriched gene sets per factor (Figure 2f). For color annotations we define broad categories of gene sets manually.
+```{r broad_categories}
+#broader categories
+label_pathway <- function(x){
+  ifelse(grepl("[s|S]tress|HSF|[S|s]enescence|[T|t]elomer|Attenuation phase", x), "stress_aging",
+         ifelse(grepl("egulat|Polymerase", x) & grepl("RNA", x), "RNA_regulation",
+                ifelse(grepl("Immun|TCR|Interleukin|IL",x), "ImmuneResponse", "other")))
+}
+categories <- sapply(rownames(reactomeGS), label_pathway)
+
+# write categories to .csv files
+# write.csv(file=file.path("stress_aging.csv"),
+#           names(categories[which(categories=="stress_aging")]))
+# write.csv(file=file.path("ImmuneResponse.csv"),
+#           names(categories[which(categories=="ImmuneResponse")]))
+# write.csv(file=file.path("RNA_regulation.csv"),
+#           names(categories[which(categories=="RNA_regulation")]))
+# write.csv(file=file.path("other.csv"),
+#           names(categories[which(categories=="other")]))
+
+# color definition
+col4Pathways <- c("other"="gray",
+                  "cellular stress/senescence"="cyan",
+                  "RNA regulation"="navy",
+                  "Immune Response"="forestgreen")
+
+nicelabels <- c(other="other",
+                stress_aging="cellular stress/senescence",
+                ImmuneResponse="Immune Response",
+                RNA_regulation="RNA regulation" )
+```
+
+ Barplot of enriched gene sets on each factor
+```{r GSEA_overview, fig.width = 4, fig.height = 4.8}
+# collect results in dataframe
+pathwaysDF <- melt(gsea.out$sigPathways, value.name="pathway")
+colnames(pathwaysDF) <- c("pathway", "factor")
+pathwaysDF %<>% mutate(type=label_pathway(pathway))
+
+# summarize per factor
+pathwaysSummary <- pathwaysDF %>% dplyr::group_by(factor) %>%
+  dplyr::summarise(other = sum(type=="other"),
+                   stress_aging=sum(type=="stress_aging"),
+                   ImmuneResponse = sum(type == "ImmuneResponse"),
+                   RNA_regulation = sum(type=="RNA_regulation"))
+
+# add factors without enrichment
+df_none <- data.frame(factor = colnames(Z)[-1][!colnames(Z)[-1] %in% pathwaysSummary$factor],
+                      other = 0, stress_aging=0,
+                      ImmuneResponse=0, RNA_regulation=0)
+pathwaysSummary <- rbind(pathwaysSummary, df_none)
+pathwaysSummary %<>%  melt(id.vars = "factor", variable.name = "type", value.name = "count")
+pathwaysSummary$factor <- factor(pathwaysSummary$factor, levels = 1:K)
+pathwaysSummary %<>% mutate(type=as.character(nicelabels[type]))
+pathwaysSummary$type <- factor(pathwaysSummary$type, levels=rev(as.character(nicelabels)))
+
+ggplot(pathwaysSummary, aes(x=factor, y=count, fill=type)) +
+  geom_bar(stat="identity") +
+  ylab("Enriched gene sets at FDR 1%") +
+  xlab("Factor") +
+  scale_fill_manual(values=col4Pathways) +
+  theme(legend.position = "top") +
+  guides(fill=guide_legend(title="",nrow=2))
+```
+
+# Further analyses
+
+## In-depth analysis of selected MOFA factors
+
+### Factor 1 (Figure 3)
+
+#### Clustering of patients based on Factor 1 (Figure 3a)
+Check which K is optimal in K-means clustering using a BIC criterion.
+```{r BIC_LF1, fig.height=5, fig.width=7}
+bic <- Optimal_Clusters_KMeans(Z[,"1", drop=F], 7, criterion="BIC")
+df_bic <- data.frame(BIC = bic[1:length(bic)], K=1:length(bic))
+ggplot(filter(df_bic, K>1), aes(x=K, y=BIC)) +geom_line(linetype="dashed") +geom_point() + theme_bw()
+```
+
+Based on the value of factor 1 samples are classified into 3 groups using kmeans.
+```{r kmeans_LF1}
+# kmeans to determine 3 factor clusters
+set.seed(32180)
+ZMC <- kmeans(Z[,"1"], 3, nstart=1000, iter.max = 1000)
+ZMC <- ZMC$cluster
+ZMC <- ifelse(ZMC==1, "HZ", ifelse(ZMC==2, "LZ", "IZ"))
+
+# Comparison to kwnon sample groups based on the methylation cluster
+# methylation cluster
+MC <- covariates[, "MethylationCluster"]
+MC[is.na(MC)] <- "missing"
+names(MC) <- rownames(covariates)
+
+table(MC, ZMC)
+```
+
+Beeswarm plot (Fig. 3a and Appendix Figure S11)
+```{r BeeswarmZMC, fig.width = 3, fig.height = 5}
+col4Clusters <- c(LZ="navy", IZ="darkgoldenrod", HZ="darkred")
+MCcolors <- col4Clusters[ZMC]
+
+#make plot
+par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+bs <- beeswarm(Z[,"1"], pwcol = MCcolors, pch = 16,
+          ylab = paste("Factor", "1"), xlab = "",
+          cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+
+legend("top", legend = c("LZ", "IZ", "HZ"),
+       title = "Factor clusters", pch = 16,
+       col = col4Clusters, ncol = 3,
+       inset=c(0,-0.2), cex=1.2,
+       box.lwd = 0, box.col = "white")
+```
+
+As a comparison: Beeswarm plot of factor 1 with samples colored based on their Methylation Cluster. (To compare with the clusters based on factor 1)
+```{r BeeswarmMC, fig.width = 3, fig.height = 5}
+# get methylation cluster and define colors
+MC <- covariates[,"MethylationCluster"]
+MC[is.na(MC)] <- "missing"
+MC <- factor(MC, levels = c("LP", "IP", "HP", "missing"))
+names(MC) <- rownames(covariates)
+col4MC <- c(LP="navy", IP="darkgoldenrod", HP="darkred", "missing"="gray")
+MCcolors <- col4MC[MC]
+
+#make plot
+par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+bs <-beeswarm(Z[,"1"], pwcol = MCcolors, pch = 16,
+          ylab = paste("Factor", "1"), xlab = "",
+          cex.lab=1.5, cex.axis=1.5,
+          cex.main=1.5, cex.sub=1.5)
+
+legend("top", legend =  levels(MC)[1:3],
+       title = "Methylation Cluster", pch = 16,
+       col = col4MC[1:3], ncol = 4,
+       inset=c(0,-0.2), cex=1.2,
+       box.lwd = 0, box.col = "white")
+```
+
+Samples breakdown by number of views
+```{r sample_breakdown}
+stopifnot(all(names(ZMC)==names(MC)))
+df_MC <- data.frame(MC=MC, ZMC=ZMC, patID=names(MC))
+df_MC <- cbind(df_MC,t(sapply(df_MC$patID, function(p) sapply(MOFAobject@TrainData, function(l) !all(is.na(l[,p]))))))
+
+table(df_MC$ZMC, df_MC$Drugs)
+table(df_MC$ZMC, df_MC$mRNA)
+table(df_MC$ZMC, df_MC$Methylation)
+table(df_MC$ZMC, df_MC$Mutations)
+table(df_MC$ZMC)
+```
+
+#### Characterization in the mRNA view (Figure 3b,c)
+
+Top Weights
+```{r mRNAweigths_LF1,fig.width=5.6, fig.height=8}
+# number of top genes to show
+ntop_mRNA <- 12
+
+# list of previously mentioned IGHV associated genes (see references in ms)
+knownGenes <- c("AKAP12", "ADAM29", "BCL7A", "CLECSF2", "FCGBP", "FLJ10884",
+                "FUT8", "LPL", "TCF7", "WNT3", "APOD", "SPG20", "MYL9", "NRIP1",
+                "SPAP1", "SPRY2", "TGFBR3", "ZAP70", "COBLL1", "ZNF667", "SEPT10",
+                "CRY1", "PLD1", "BCL7A", "WNT9A")
+
+# plot top weights
+p <- showTopWeightsAndColor(MOFAobject, "mRNA", "1",
+                            nfeatures = ntop_mRNA,
+                            Features2color = knownGenes,
+                            scalePerView = T,
+                            col2highlight = "darkorange",
+                            orderBySign = TRUE)
+p
+```
+
+Data Heatmap
+```{r heatmap_mRNA_LF1, fig.width=7, fig.height=4.8}
+# get top genes and patient having RNAseq
+topGenes <- names(sort(abs(MOFAobject@Expectations$W$mRNA[,"1"]), decreasing = T))[1:ntop_mRNA]
+topGenes <- topGenes[order(MOFAobject@Expectations$W$mRNA[topGenes,"1"], decreasing = T)]
+patients2include <- colnames(data$mRNA)[apply(data$mRNA,2, function(p) !any(is.na(p)))]
+
+# annotate by IGHV factor 
+anno_df <- data.frame(Z=Z[,"1"], ZMC=ZMC)
+colnames(anno_df) <- c("Factor 1", "Clusters")
+rownames(anno_df) <- rownames(Z)
+annoHM_colors <- list(c("blue", "red"), col4Clusters)
+names(annoHM_colors) <- c("Factor 1", "Clusters")
+
+# heatmap
+pheatmap(data$mRNA[topGenes, patients2include[order(Z[patients2include, "1"])] ],
+         show_colnames = F, cluster_rows = F, cluster_cols = F, fontsize = 18,
+         annotation_col = anno_df, annotation_legend = F,
+         gaps_col = c(which(ZMC[names(sort(Z[patients2include,"1"], decreasing = F))]=="IZ")[1]-1,
+                      which(ZMC[names(sort(Z[patients2include,"1"], decreasing = F))]=="HZ")[1]-1),
+         show_rownames = T, legend = T, annotation_colors = annoHM_colors)
+```
+
+
+#### Characterization in the methylation view
+
+Top Weights
+```{r meth_weigths_LF1,fig.width=5.6, fig.height=4.8}
+# number of top sites to show
+ntop_meth <- 12
+
+# plot top weights
+p <- showTopWeightsAndColor(MOFAobject, "Methylation", "1",
+                            nfeatures = ntop_meth,
+                            scalePerView = T)
+p
+```
+
+Data Heatmap
+```{r heatmap_meth_LF1, fig.width=7, fig.height=4.8}
+# get top sites and patient having methylation data
+topSites <- names(sort(abs(MOFAobject@Expectations$W$Methylation[,"1"]), decreasing = T))[1:ntop_meth]
+patients2include <- colnames(data$Methylation)[apply(data$Methylation,2, function(p) !any(is.na(p)))]
+
+# annotate by IGHV factor 
+anno_df <- data.frame(Z=Z[,"1"], ZMC=ZMC)
+colnames(anno_df) <- c("Factor 1", "Clusters")
+rownames(anno_df) <- rownames(Z)
+annoHM_colors <- list(c("blue", "red"), col4Clusters)
+names(annoHM_colors) <- c("Factor 1", "Clusters")
+
+# heatmap
+pheatmap(data$Methylation[topSites, patients2include[order(Z[patients2include, "1"])] ],
+         show_colnames = F, cluster_rows = F, cluster_cols = F, fontsize = 18,
+         annotation_col = anno_df, annotation_legend = F,
+         gaps_col = c(which(ZMC[names(sort(Z[patients2include,"1"], decreasing = F))]=="IZ")[1]-1,
+                      which(ZMC[names(sort(Z[patients2include,"1"], decreasing = F))]=="HZ")[1]-1),
+         show_rownames = T, legend = T, annotation_colors = annoHM_colors)
+```
+
+
+
+#### Characterization in the drug response view  (Figure 3d,e)
+For drugs we show the average weight across all concentrations
+```{r drug_weigths_LF1, fig.width=7, fig.height=5}
+plotDrugWeights(MOFAobject, "1", ntop=15, broad_categories = TRUE)
+```
+
+
+Drug Response Curves
+```{r drug_curves_LF1, fig.width = 6, fig.height = 5}
+  data(conctab, package="pace")
+  groups <- ZMC
+  groupnm <- "clusters"
+  drugResDF <- lapply(c("dasatinib", "AZD7762"), function(drugnm) {
+    drugData2plot <-MOFAobject@TrainData$Drugs[grepl(drugnm,rownames(MOFAobject@TrainData$Drug)),]
+    drugid <- rownames(drugs[drugs$name==drugnm, ])
+  
+    drugDF <- melt(drugData2plot, varnames = c("drug", "patient"), value.name = "viability")
+    drugDF %<>% mutate(concentrationID = as.numeric(sapply(as.character(drug), function(x) strsplit(x, "_")[[1]][2])))
+    drugDF %<>% mutate(concentration = as.numeric(conctab[drugid,paste0("c", concentrationID)]))
+    if(!is.null(groups)) drugDF %<>% mutate(group = as.factor(groups[patient])) else drugDF$group <- factor(1)
+
+    drugDF %<>% filter(!is.na(viability) & !is.na(group))
+    summary_drugDF <-  drugDF %>% group_by(group, concentrationID, concentration) %>%
+            dplyr::summarize(mean_viab = mean(viability), sd = sd(viability), n = length(viability))
+    summary_drugDF$se <- summary_drugDF$sd/sqrt(summary_drugDF$n)
+    summary_drugDF$drug <- drugnm
+    summary_drugDF
+}) %>% bind_rows()
+  
+  p <- ggplot(drugResDF, aes(x=concentration, y=mean_viab, col=group, grou=group)) +
+    geom_errorbar(aes(ymin=mean_viab-2*se, ymax=mean_viab + 2*se), width=0.1)+ geom_line(size=2) +
+    ylab("viability") +theme_bw(base_size = 21) + facet_wrap(~drug)+
+    xlab(expression(paste("Concentration [",mu,"M]"))) #+ scale_x_reverse()
+  if(is.null(groups)) p <- p + guides(col=F) else p <- p + guides(col=guide_legend(title =groupnm))
+  
+  p <- p + scale_color_manual(values = col4Clusters, labels=c("LZ", "IZ", "HZ")) +
+    ylim(c(0,1.05)) + theme(legend.position = "top", axis.text = element_text(colour="black")) 
+  
+  print(p )
+```
+
+#### Continuity and robust inference based on a subset of views (Appendix Figure S12, S13)
+
+see [here](https://github.com/PMBio/MOFA_CLL/tree/master/CLL_Analysis/continuity_Factor1)
+
+#### Prediction of IGHV status based on factor 1 (EV Figure 3)
+
+Use the Factor 1 of MOFA to classify patients into 2 groups 
+```{r IGHV_predictions}
+# IGHV status
+IGHV <- covariates[,"IGHV"]
+IGHV[is.na(IGHV)] <- "missing"
+names(IGHV) <- rownames(covariates)
+
+# cluster using kmeans to determine 2 IGHV factor/cluster
+set.seed(32180)
+ZIGHV <- kmeans(Z[,"1"], 2, nstart=1000, iter.max = 1000)
+ZIGHV <- ZIGHV$cluster
+
+# label clusters as U and M-CLL
+IGHV[IGHV==0] <- "U"
+IGHV[IGHV==1] <- "M"
+ZIGHV[ZIGHV==1]<-"M"
+ZIGHV[ZIGHV==2]<-"U"
+
+# collect labels and factor values in data-frame
+df_clustering <- data.frame(IGHV_label = as.factor(IGHV),
+                            IGHV_predicted = ZIGHV, 
+                            patID = rownames(Z), Z = Z[,"1"])
+
+
+#check agreement between clincal IGHV label and cluster results
+clagree <- paste(ZIGHV ,IGHV, sep="_")
+clagree <- ifelse(clagree %in% c("M_M", "U_U"), "agreement with label",
+                  ifelse(grepl("missing",clagree), "label missing",
+                         ifelse(clagree=="M_U", "U-CLL clustered as M-CLL", "M-CLL clustered as U-CLL" )))
+df_clustering$agreement <- clagree
+```
+
+Define colors
+```{r color_IGHV}
+#colors
+colors_agreemet <- c("agreement with label" = "darkgreen", 
+                               "label missing" ="gray", 
+                               "U-CLL clustered as M-CLL" ="sienna",
+                               "M-CLL clustered as U-CLL" = "orange")
+
+#colors for heatmap annotations
+anno_colors<- list(IGHV_label = c("M"="red", "U"="blue", "missing" = "gray"),
+                   IGHV_predicted = c("M"="darkred", "U"="darkblue"),
+                  agreement =colors_agreemet)
+```
+
+Beeswarm plots for agreement of factor groups with clincial IGHV label (Figure EV 3a)
+```{r Beeswarm_mislabelling, fig.width = 3, fig.height = 5}
+# use colors defined above
+col4bees <- anno_colors$agreement[df_clustering$agreement]
+
+gg_bees <- ggplot(df_clustering, aes(x=1,y=Z, col=agreement)) + geom_beeswarm(size=2) +
+  scale_color_manual(values=colors_agreemet) + 
+  theme(axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        text = element_text(size=18))+
+  guides(col=F) + ylab("Factor 1")
+gg_bees
+```
+
+
+Pie plot of IGHV label agreement (Figure EV 3b)
+```{r IGHV_classification_pie}
+df_pie <- df_clustering %>%
+  group_by(agreement) %>%
+  dplyr::summarize(value=length(patID))
+df_pie$agreement <- factor(df_pie$agreement, levels = rev(df_pie$agreement))
+
+gg_pie <- ggplot(df_pie, aes(x="", y=value, fill=agreement)) +
+  geom_bar(stat="identity",width = 1)+
+  coord_polar("y", start=0)+
+  # scale_fill_brewer(palette="Dark2")+
+  theme_minimal() + xlab("") + ylab("")+
+  scale_fill_manual(values=colors_agreemet) +
+  # ggtitle("Classification of IGHV status") +
+  theme(text=element_text(size=22),
+        legend.position = "bottom",
+        axis.text = element_blank(),
+        axis.line = element_blank()) +
+  guides(fill=F,
+         col=F) +
+  geom_text(aes(y = cumsum(value)-value/2, x=1.7, label=value, col=agreement), size=6) +
+  scale_color_manual(values=colors_agreemet)
+gg_pie
+```
+
+Heatmaps of omic layers annotated with IGHV classification and Factor classification
+
+a. Methylation
+```{r heatmap_meth_IGHV, fig.width = 8, fig.height = 7}
+methData <- data$Methylation
+methData <- methData[,apply(methData,2, function(d) !all(is.na(d)))]
+methHmLeg <- pheatmap(cor(methData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "Methylation",
+         annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0
+         )
+```
+
+b. Drugs
+```{r Heatmap_drugs_IGHV, fig.width = 5.6, fig.height = 4.9}
+drugData <- data$Drugs
+drugData <- drugData[,apply(drugData,2, function(d) !all(is.na(d)))]
+drugHmLeg <- pheatmap(cor(drugData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "Drug response", legend = T,
+         annotation_colors  =  anno_colors, annotation_legend = T, treeheight_col=0,
+        annotation_names_row=F, treeheight_row = 0
+         )
+```
+
+c. mRNA
+```{r Heatmap_RNAseq_IGHV, fig.width = 5.6, fig.height = 4.9}
+mRNAData <- data$mRNA
+mRNAData <- mRNAData[,apply(mRNAData,2, function(d) !all(is.na(d)))]
+mRNAHm <- pheatmap(cor(mRNAData),
+         annotation_row = select(df_clustering, c(IGHV_label, IGHV_predicted, agreement)),
+         show_rownames = F, show_colnames = F, main = "mRNA",
+         annotation_colors  =  anno_colors, annotation_legend = F, treeheight_col=0,
+         annotation_names_row=F, treeheight_row = 0
+         )
+```
+
+
+### Factor 3 (Appendix Figure S15)
+This facotr is mainly acitve in the drug response view (see variance decomposition)
+#### Weights on drug responses
+```{r, echo=F}
+ MyplotWeights <- function (object, view, factor, nfeatures = 10, abs = FALSE, 
+    manual = NULL, color_manual = NULL, scale = TRUE) 
+{
+    if (!is(object, "MOFAmodel")) 
+        stop("'object' has to be an instance of MOFAmodel")
+    stopifnot(all(view %in% viewNames(object)))
+    if (is.numeric(factor)) {
+        if (object@ModelOpts$learnIntercept == T) 
+            factor <- factorNames(object)[factor + 1]
+        else factor <- factorNames(object)[factor]
+    }
+    else {
+        stopifnot(factor %in% factorNames(object))
+    }
+    if (!is.null(manual)) {
+        stopifnot(class(manual) == "list")
+        stopifnot(all(Reduce(intersect, manual) %in% featureNames(object)[[view]]))
+    }
+    W <- getWeights(object, views = view, factors = factor, as.data.frame = T)
+    W <- W[W$factor == factor & W$view == view, ]
+    if (scale) 
+        W$value <- W$value/max(abs(W$value))
+    if (abs) 
+        W$value <- abs(W$value)
+    W$group <- "0"
+    if (nfeatures > 0) 
+        W$group[abs(W$value) >= sort(abs(W$value), decreasing = T)[nfeatures]] <- "1"
+    if (!is.null(manual)) {
+        if (is.null(color_manual)) {
+            color_manual <- hcl(h = seq(15, 375, length = length(manual) + 
+                1), l = 65, c = 100)[1:length(manual)]
+        }
+        else {
+            stopifnot(length(color_manual) == length(manual))
+        }
+        for (m in 1:length(manual)) {
+            W$group[W$feature %in% manual[[m]]] <- as.character(m + 
+                1)
+        }
+    }
+    W <- W[order(W$value), ]
+    W$feature <- factor(W$feature, levels = W$feature)
+    W$tmp <- as.character(W$group != "0")
+    gg_W <- ggplot(W, aes(x = feature, y = value, col = group)) + 
+        geom_point(aes(size = tmp)) + labs(x = "Rank position", 
+        y = "Loading") + scale_x_discrete(breaks = NULL, expand = c(0.05, 
+        0.05)) + ggrepel::geom_text_repel(data = W[W$group != 
+        "0", ], aes(label = feature, col = group), segment.alpha = 0.1, 
+        segment.color = "black", segment.size = 0.3, box.padding = unit(0.5, 
+            "lines"), show.legend = F)
+    gg_W <- gg_W + scale_size_manual(values = c(0.5, 2)) + guides(size = F)
+    cols <- c("grey", "black", color_manual)
+    gg_W <- gg_W + scale_color_manual(values = cols) + guides(col = F)
+    return(gg_W)
+}
+```
+
+Nearly all drug-consentration pairs have positive weight on this factor.
+```{r Weights}
+ggW <- MyplotWeights(MOFAobject, "Drugs", "3", nfeatures = 0) +
+  geom_hline(yintercept = 0, color="darkred", linetype="dashed") 
+```
+
+####  Comparison to general drug level sensitivity
+```{r GLDS}
+dd <- data$Drugs
+df_GDLS <- data.frame(GLDS= colMeans(dd), Factor.3 = Z[,"3"])
+ggGLDS <- ggplot(df_GDLS, aes(x=Factor.3, y=GLDS)) + geom_point() +geom_smooth(method = 'lm') +
+  annotate("text",x=-3,y=0.8,label=paste("cor=",round(cor(df_GDLS$GLDS,df_GDLS$Factor.3, use="complete.obs"),2)), col="blue", cex=5)+
+  xlab("Factor 3") + ylab("General drug sensitivity")
+```
+
+#### Arrange plot
+```{r Factor3_SXX, fig.height=7, fig.width=5}
+plot_grid(ggW, ggGLDS, align = "hv", axis = "l", nrow=2, labels=c("a","b"))
+```
+
+### Factor 4 (Appendix Figure S14)
+
+#### Results from gene set enrichment analysis for factor 4.
+```{r}
+df <- as.data.frame(gsea.out$pval.adj[,4])
+colnames(df) <- c("LF_4")
+df$pathway <- rownames(df)
+rownames(df) <- NULL
+df_sig <-filter(df, LF_4<0.001)
+df_sig$pathway <- factor(df_sig$pathway, levels=df_sig$pathway[order(df_sig$LF_4, decreasing = T)])
+df_sig <- filter(df_sig, pathway %in% tail(levels(df_sig$pathway),10))
+gg_gsea <- ggplot(df_sig, aes(x=pathway, y=-log(LF_4))) + geom_point(position=position_dodge(.5)) +
+  geom_linerange(aes(ymin=0,ymax=-log(LF_4)), linetype = "dashed",position=position_dodge(.5))+
+  geom_hline(yintercept = -log10(0.01), linetype = "longdash") + 
+  coord_flip() + ylab("-log p-value") + 
+  scale_x_discrete(position = "top") +
+  theme(plot.margin=margin(t=0,r=0,b=0,l=0.5,"cm"))+
+  xlab("")
+gg_gsea
+```
+
+#### Heatmap showing the expression top weighted gene
+```{r heatmap}
+getTopWeights <- function(MOFAobject, view, factor, n=20){
+  rownames(getWeights(MOFAobject, view,factor)[[1]])[order(abs(getWeights(MOFAobject, view, factor)[[1]]), decreasing = T)][1:n]
+}
+topWeights_mRNA_4 <- getTopWeights(MOFAobject, "mRNA", "4", 10)
+
+anno_df <- data.frame("Factor 4"=Z[,"4"])
+mRNA_4_hm <- plotDataHeatmap(MOFAobject, "mRNA", 4, transpose = T,
+                                features= topWeights_mRNA_4,
+                                sortSamples = T, 
+                                annotation_col=anno_df, cluster_cols=F,
+                                cluster_rows=TRUE,
+                                treeheight_row = 0,
+                                show_colnames=F)$gtable
+gg_mRNA_4_hm <- as_ggplot(mRNA_4_hm)+theme(plot.margin=margin(t=0,r=-2,b=0,l=0.5,"cm"))
+```
+
+#### Scatterplots wit surface markers
+```{r CDs}
+df <- data.frame(CD8A =  MOFAobject@TrainData$mRNA["CD8A",],
+                 CD8B =  MOFAobject@TrainData$mRNA["CD8B",],
+                 CD3D =  MOFAobject@TrainData$mRNA["CD3D",],
+                 CD300E = MOFAobject@TrainData$mRNA["CD300E",],
+                 LF4= Z[,"4"])
+df <- gather(df, value=value, key=gene, -LF4)
+df_cor <- group_by(df, gene) %>% dplyr::summarize(cor=round(cor(LF4,value, use="complete.obs"),2),
+                                                  xpos = quantile(value, 0.8,na.rm=T))
+gg_cds <- ggplot(df, aes(x= value, y= LF4)) +geom_point()+
+ facet_wrap(~gene, scales="free_x", nrow=1) + geom_smooth(method="lm")+
+  geom_text(data = df_cor, aes(x = xpos, y = 0.5, label = paste("cor=",cor)), col="blue")+
+  xlab("Normalized expression") + ylab("Factor 4")
+
+```
+
+Arrange plot
+```{r Factor4_SXX, fig.width=10, fig.height=8}
+plot_grid(gg_gsea, gg_mRNA_4_hm, gg_cds, ncol=1, labels=letters[1:3], align="hv", axis="l", label_size = 24)
+```
+
+
+### Factor 5 (EV Figure 2)
+
+#### Beeswarm
+```{r}
+plotFactorBeeswarm(MOFAobject, factors="5", color_by="TNF", showMissing = F) +ylab("Factor 5")
+```
+
+#### GSEA
+```{r}
+LinePlot_FeatureSetEnrichmentAnalysis(gsea.out, "5", max.pathways = 7)
+```
+
+#### Gene expression
+```{r,  fig.width = 5, fig.height = 4}
+df <- getFactors(MOFAobject, "5", as.data.frame = TRUE)
+anno <- mutate(df, Factor.5=value)
+rownames(anno) <- anno$sample
+anno <- select(anno, "Factor.5")
+
+plotDataHeatmap(MOFAobject, view="mRNA", factor="5", features=6, transpose=T,
+                cluster_cols=F, cluster_rows=F, main="", show_rownames=T, show_colnames=F, annotation_col=anno)
+```
+
+#### Drug response wieghts
+```{r}
+plotDrugWeights(MOFAobject, "5", ntop = 9)
+```
+
+#### Drug response values
+```{r, fig.width = 8.5, fig.height = 6}
+anno_df <- getFactors(MOFAobject, "5", as.data.frame = TRUE)
+anno_df %<>% mutate(Factor.5 = value)
+rownames(anno_df) <- anno_df$sample
+anno_df %<>% select(Factor.5)
+
+col <- brewer.pal(n = 9, name = "YlGn")
+
+plotDataHeatmap(MOFAobject, factor = "5", features = c("SD51_4","SD07_3","MIS-43_4"), view = "Drugs", transpose = TRUE,
+                col=col, annotation_col=anno_df,
+                show_rownames = T, show_colnames = F,
+                cluster_rows = F, cluster_cols = F)
+```
+
+
+### Factor 7 (Appendix Figure S18)
+#### Beeswarm
+```{r, fig.width = 5, fig.height = 5}
+df = getFactors(MOFAobject, "7", as.data.frame = T)
+df <- df[complete.cases(df),]
+rownames(df) <- df$sample
+df$del17p13 <- covariates[df$sample,"del17p13"]
+
+par(mar=c(2.3, 4.5, 4, 2), xpd=TRUE)
+colors <- colorRampPalette(rev(brewer.pal(n = 5, name = "RdYlBu")))(2)[as.numeric(cut(df$del17p13,breaks = 2))]
+bs <- beeswarm(df$value, pwcol = colors, pch = 16, ylab = "Factor 7", xlab = "", cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+legend("top", legend = c("(-) del17p13", "(+) del17p13"),
+       title = "", pch = 16,
+       col = unique(colors), ncol = 1,
+       cex=1.5, inset = -0.28,
+       box.lwd = 0, box.col = "white")
+```
+
+#### Methylation
+```{r, fig.width=7.5, fig.height=4.5}
+# connect gene names for CpGs
+MOFAobject_namedCpG <- MOFAobject
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg27150870")] <- "ANKRD11"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg00981070")] <- "PRKC-Z (1)"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg10057528")] <- "PRKC-Z (2)"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg09179248")] <- "PRKC-Z (3)"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg04071758")] <- "CREBBP (1)"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg04336433")] <- "CREBBP (2)"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg14703784")] <- "RASA3"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg15032490")] <- "PAK1"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg22245494")] <- "SYNM"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg05277504")] <- "ASPSCR1"
+featureNames(MOFAobject_namedCpG)[["Methylation"]][which(featureNames(MOFAobject_namedCpG)[["Methylation"]]=="cg18440230")] <- "ERGIC1"
+gene_associated_features <- c("PRKC-Z (1)","PRKC-Z (2)","PRKC-Z (3)","CREBBP (1)","CREBBP (2)","RASA3","PAK1","SYNM","ASPSCR1","ERGIC1")
+
+anno <- select(df, value)
+plotDataHeatmap(MOFAobject_namedCpG, view="Methylation",
+                factor="7",
+                features=gene_associated_features,
+                transpose=T, 
+                show_rownames=T, show_colnames=F,
+                cluster_rows=T, cluster_cols=F,
+                annotation_col=anno)
+```
+
+#### Drug responses
+```{r}
+plotDrugWeights(MOFAobject, "7", ntop=7)
+```
+
+#### Mutations
+```{r, fig.width = 5, fig.height = 4}
+plotTopWeights(MOFAobject, "Mutations", "7", nfeatures=7, abs=T)
+
+```
+
+### Factor 8 (Appendix Figure S19)
+#### active views
+```{r R2}
+r2out <- calculateVarianceExplained(MOFAobject)
+r2df <- melt(r2out$R2PerFactor[c(8),,drop=F],
+             varnames = c("Factor", "Omic"))
+r2df$Factor <- as.character(r2df$Factor)
+r2df$value <- pmax(r2df$value,0)
+gg_r2 <- ggplot(r2df, aes(x=Omic, y=value, group=Factor, fill=Factor, label=Omic)) +
+  geom_text(angle=90, col="black", nudge_y = 0.001, hjust=0)+
+  geom_bar(stat="identity", position = "dodge") + ylab(bquote(R^2))+
+  theme_classic() +
+  scale_fill_manual(values=c("7"="darkgreen", "8"="navy")) +
+  xlab("") + ylim(c(0,0.053)) + theme( axis.text.x = element_blank())+
+  guides(fill="none")
+```
+
+
+#### Gene expression weights and enriched gene sets
+```{r weights_mRNA}
+getTopWeights <- function(MOFAobject, view, factor, n=20){
+  rownames(getWeights(MOFAobject, view,factor)[[1]])[order(abs(getWeights(MOFAobject, view, factor)[[1]]), decreasing = T)][1:n]
+}
+
+topWeights_mRNA <- getTopWeights(MOFAobject, "mRNA", "8", 20)
+
+gg_mRNA <- plotTopWeights(MOFAobject, "mRNA", "8", 20)
+gg_mRNA <- gg_mRNA + ylab("Absolute loading on Factor 8")+ xlab("")+ theme_classic() +
+  theme(plot.margin=margin(t=0.5,r=0,b=0,l=0,"cm"))
+
+
+df_anno <- data.frame("Factor 8" = Z[,"8"])
+rownames(df_anno) <- rownames(Z)
+mRNA_hm <- plotDataHeatmap(MOFAobject, "mRNA", 8, transpose = TRUE,
+                                features= topWeights_mRNA,
+                                sortSamples = TRUE, 
+                                annotation_col=df_anno,
+                                cluster_cols=FALSE,
+                                cluster_rows=FALSE,
+                                # treeheight_row = 0,
+                                show_colnames=F)$gtable
+gg_mRNA_hm <- as_ggplot(mRNA_hm)+theme(plot.margin=margin(t=0,r=-3,b=0.7,l=0.5,"cm")) +
+  theme(axis.text.y = element_blank()) + ylab("")
+```
+
+Enriched gene sets 
+```{r}
+df_gse <- data.frame(pvaladj=gsea.out$pval.adj[,8], pathway=rownames(gsea.out$pval.adj))
+threshold=0.01
+gg_gse <- ggplot(filter(df_gse, pvaladj<threshold),
+                 aes(y=-log10(pvaladj), x=pathway)) +
+  geom_point() + ylab("-log pvalue") +
+  geom_hline(yintercept = -log10(threshold), linetype = "longdash") +
+  geom_segment(aes(xend = pathway),yend = 0) +
+  coord_flip() +
+  theme_classic()+ xlab("") +
+  scale_x_discrete(labels=c(gsub("s a", "s\na",gsea.out$sigPathways[[8]][1]),
+                            gsub("d g", "d\ng",gsea.out$sigPathways[[8]][2])))
+```
+
+Assemble plot
+```{r LF8, width=10, height=16}
+gg_row1 <- plot_grid(gg_r2,gg_gse, ncol=2,
+          labels = letters[1:2], rel_widths = c(0.8,1), axis="b", align="h")
+gg_row2 <- plot_grid(gg_mRNA,gg_mRNA_hm, ncol=2,
+          labels = letters[3:4], rel_widths = c(0.6,1))
+
+grid.arrange(gg_row1, gg_row2, ncol=1, heights=c(0.7,1))
+```
+
+
+## Association of the factors to time to treatment and prediction (Figure 4)
+### Retrieve survival data
+Survival data is obtained from Dietrich, Oles, Lu et al. 2018 and the R package BloodCancerMultiOmics2017.
+```{r}
+data(patmeta, package="BloodCancerMultiOmics2017")
+survivalData <- as.matrix(patmeta[,c("T5","treatedAfter")])
+survivalData<- survivalData[!is.na(survivalData[,1]),]
+colnames(survivalData)<-c("time", "status")
+  
+# subset to common patients
+commonPats <- intersect(rownames(Z), rownames(survivalData))
+Zcommon <- Z[commonPats,]
+survivalData <- survivalData[commonPats,]
+covariatesCommon <- covariates[commonPats,]
+dataCommmon <- lapply(data, function(dd) dd[,commonPats])
+
+# construct survival object
+SurvObject <-Surv(survivalData[,1],survivalData[,2])
+```
+
+### Fit univariate Cox models for each factor
+All covariates are scaled to ensure comparability of hazard ratio.This, however, looses interpretability of HR for 0-1 groups.
+```{r, fig.height=12, fig.width=10}
+# fit a cox model for latent factors, scaling predictors
+pval_LFs<-sapply(which(apply(Z,2,var, na.rm=T)>0), function(i){
+    fit <- coxph(SurvObject  ~  scale(Zcommon[,i]))  
+    s <- summary(fit) 
+    c(p      = s[["coefficients"]][, "Pr(>|z|)"], 
+      coef   = s[["coefficients"]][, "exp(coef)"], 
+      lower  = s[["conf.int"]][, "lower .95"], 
+      higher = s[["conf.int"]][, "upper .95"])
+  })
+colnames(pval_LFs) <- colnames(Z)[which(apply(Z,2,var, na.rm=T)>0)]
+
+# collect in data frame
+df_survival <- as.data.frame(t(pval_LFs))
+df_survival$label <- paste(formatC(df_survival$p, digits = 2), sep="")
+df_survival$predictor <- factor(paste("Factor",colnames(pval_LFs)), levels=rev(paste("Factor",colnames(pval_LFs))))
+df_survival
+
+# re-orient to HR > 1
+df_survival %<>% mutate(positive = coef>1)
+df_survival %<>% mutate(y = ifelse(positive,coef, 1/coef))
+df_survival %<>% mutate(ymin = ifelse(positive,lower, 1/lower))
+df_survival %<>% mutate(ymax = ifelse(positive,higher, 1/higher))
+```
+
+Forest Plot of univariate associations
+```{r ForestPlotSurvival_TTT, fig.width = 7, fig.height = 12}
+# TTT
+ggplot(df_survival, aes(x=predictor, y=y,ymin=ymin,ymax=ymax))+
+  geom_pointrange( col='#619CFF')+ coord_flip() +
+  scale_x_discrete() + ylab("(Positive) Hazard Ratio")+ 
+  scale_y_log10(breaks=c(0.75,1,1.5,2,3), limits=c(min(df_survival$ymin)-0.1,3.1)) +
+  geom_hline(aes(yintercept=1), linetype="dotted") + 
+  geom_text(aes(label=label, y=2.5),size=5, hjust = "left")+
+  theme(text =element_text(size=18),
+        axis.ticks.y = element_blank(),
+        legend.position="bottom", panel.grid =element_blank(),
+        panel.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        axis.text.y = element_text(size=16),
+        axis.text.x = element_text(size=16),
+        plot.title = element_text(size=18)) +
+  guides(colour=F) +
+  xlab("Factor") + scale_color_discrete(drop=FALSE)
+```
+
+
+### Multivariate models for predicting survival
+Harrals C-Index is used as performance measure, 5-fold stratified cross-validation.
+Both models using PCs and no penalization as well as using all features with a ridge approach are fitted here.
+```{r}
+  #stratified CV to include same proportion of uncensored cases
+  set.seed(1290)
+  uncensored <- SurvObject[,"status"]==1
+  cv_ix <- dismo::kfold(1:length(commonPats), k=5, by=uncensored)
+  
+  # Use same number of principal components as predictors as MOFA factors (without the intercept)
+  topPC <- ncol(Z) - 1
+
+  # impute missing data values by mean
+  data_imputed <- lapply(dataCommmon, function(view) {
+    apply(view,1, function(x) { x[is.na(x)] <- mean(x, na.rm=TRUE); return(x)})
+  })
+  
+  # add concatenated data matrix
+  data_imputed$all <- Reduce(cbind, data_imputed)
+  
+  # construct predictor list fo first 'topPC' PCs each
+  FeatureList <- lapply(names(data_imputed), function(singleview){
+    dat <- data_imputed[[singleview]]
+    pc.out <- prcomp(dat)
+    pc.out$x[,1:topPC]
+  })
+  names(FeatureList) <- paste(names(data_imputed),sep="")
+  names(FeatureList)[grep("viab",names(FeatureList))] <- "DrugResponse"
+  
+  # add MOFA factors
+  FeatureList$LF = Zcommon[,-1]
+
+  # List of predictors using all features
+  FeatureList_all <- data_imputed
+  names(FeatureList_all) <- paste(names(data_imputed),"full",sep="_")
+
+  # fit a cox model and predict on left-out fold
+  fit <- lapply(unique(cv_ix), function(i){
+    
+  #fit coxph for reduced (i.e. MOFA facotrs and PCs)
+  c = lapply(FeatureList, function(x) coxph(SurvObject[cv_ix!=i,]  ~ as.matrix(x)[cv_ix!=i,]))
+  p = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y), FeatureList, c)
+      
+  # fit cox model with ridge penalty for all
+  c_all = lapply(FeatureList_all, function(x) 
+  cv.glmnet(as.matrix(x)[cv_ix!=i,], survivalData[cv_ix!=i,], family="cox", alpha=0))
+  p_all = mapply(function(x,y) as.matrix(x[cv_ix==i,]) %*% coef(y, y$lambda.min), FeatureList_all, c_all)
+  p_all <- do.call(cbind, p_all)      
+  colnames(p_all) <- names(FeatureList_all)
+  
+  # calculate CI    on left-out fold 
+  p_joint <- cbind(p, p_all)
+  CI=apply(-p_joint,2, rcorr.cens, SurvObject[cv_ix==i])[1,]
+  list(CI=CI,c=c, c_all=c_all)
+  })
+
+  # get cross-validated CI
+  concordanceCV <- sapply(fit, function(l) l$CI)
+  colnames(concordanceCV) <- unique(cv_ix)
+  df_hc <- melt(concordanceCV, varnames = c("predictor", "cv_idx"), value.name = "CI")
+  df_hc$predictor <- ifelse(df_hc$predictor=="LF", "MOFA factors", as.character(df_hc$predictor))
+
+  # calculate summary statistics across folds
+  summaryHc <- aggregate(df_hc$CI,
+    by = list(predictors = df_hc$predictor), 
+    FUN = function(x) c(mean = mean(x), sd = sd(x),
+                        n = length(x)))
+  summaryHc <- do.call(data.frame, summaryHc)
+  summaryHc$se <- summaryHc$x.sd / sqrt(summaryHc$x.n)
+
+  summaryHc
+```
+
+Define colors for barplot
+```{r}
+cols4survival <- c("#E69F00","#D55E00","#009E73", "#56B4E9",  "#999999","#0072B2")
+names(cols4survival) <- c("Methylation", "Mutations","mRNA",  "Drugs", "all", "MOFA factors")
+```
+
+Main Plot 4(a): PCs as predictors
+Plot the resulting prediciton performance when principal componenets are included as predictors in a multivariate Cox model.
+```{r HarrelsC_TTT}
+summaryHc_main <- filter(summaryHc,
+                         predictors %in% c(names(data), "all", "MOFA factors"))
+limits <- aes(ymax = summaryHc_main$x.mean + summaryHc_main$se,
+              ymin = summaryHc_main$x.mean - summaryHc_main$se)
+summaryHc_main$predictors <- factor(summaryHc_main$predictors,
+                                    levels =c("Methylation", "Mutations","mRNA",  "Drugs",
+                                               "all", "MOFA factors"))
+
+# barplot
+  ggplot(summaryHc_main, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
+    geom_bar(stat = "identity") + 
+   coord_cartesian(ylim = c(0.5,0.85)) +
+  scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + 
+  geom_errorbar(limits, position = "dodge", width = 0.25)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size=18),
+        axis.text.y = element_text(size=18),
+         axis.title.y = element_text(size=18),
+        strip.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        legend.position= "none",
+        plot.title = element_text(size=20)) +
+  ylab("Harrell's C-index") + xlab("")
+```
+
+Supplement S14: All features as predictors
+Plot the resulting prediciton performance when all features are included as predictors in a multivariate Cox model with ridge penalty.
+```{r HarrelsC_TTT_supp}
+summaryHc_supp <- filter(summaryHc,
+                         predictors %in% c(paste(c(names(data), "all"), "full", sep="_"), "MOFA factors"))#, "factors 1,7,8"))
+limits <- aes(ymax = summaryHc_supp$x.mean + summaryHc_supp$se,
+              ymin = summaryHc_supp$x.mean - summaryHc_supp$se)
+summaryHc_supp$predictors <- factor(sapply(summaryHc_supp$predictors, function(nm) sub("_full","",nm)),
+                                    levels =c("Methylation", "Mutations","mRNA",  "Drugs",
+                                               "all", "MOFA factors"))
+
+# barplot
+  ggplot(summaryHc_supp, aes(x=predictors, y=x.mean, fill=predictors, group=predictors))+
+    geom_bar(stat = "identity") + 
+   coord_cartesian(ylim = c(0.5,0.85)) +
+  scale_fill_manual(values=cols4survival, labels=names(cols4survival)) + 
+  geom_errorbar(limits, position = "dodge", width = 0.25)+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.background = element_rect(fill="white"),
+        strip.text = element_blank(),
+        legend.position= "none",
+        plot.title = element_text(size=20)) +
+  ylab("Harrell's C-index") + xlab("")
+```
+
+
+#### Kaplan-Meier plots
+To visualize the association of the factor to clinical outcome. Samples are split into two groups based on the continious factors and a Kaplan Meier plot is made for those groups. Note that this is mainly for visualisation purposes, usually the continious factor should be considered as above in the Cox models.
+```{r KaplanMeier, fig.width=10.5, fig.height=3.5}
+  # calculate KM for all LFs
+  glist <- lapply(as.character(1:(ncol(Z)-1)), function(lfno){
+  
+  #determine optimal cut-point and classify samples accordingly
+  df <- data.frame(time=survivalData[,1], event = survivalData[,2], Zcommon)
+  cut <- survminer::surv_cutpoint(df, variables=paste("X", lfno, sep=""))
+  df$FactorCluster <- Zcommon[,lfno] > cut$cutpoint$cutpoint
+  
+  # due to rotational invariance of factors just use same colors for upper and lower group in the KM plot 
+  # (irrescpecitve of which end of the factor they belong to)
+  if(lfno==7) df$FactorCluster <- Zcommon[,lfno] < cut$cutpoint$cutpoint
+
+  # fit survival model for the given factor
+  fit <- survfit(Surv(time, event) ~ FactorCluster, df)
+  ggLF <- survminer::ggsurvplot(fit, data =df,
+                        conf.int = TRUE,
+                        pval = TRUE,
+                        fun = function(y) y*100,
+                        legend = "none",
+                        legend.labs = c(paste("low LF", lfno), paste("high LF", lfno)),
+                        xlab = "Time to treatment",
+                        ylab=ifelse(lfno==1, "Survival probability (%)", ""),
+                        title= paste("Factor", lfno)
+                        )
+  ggLF$plot
+ })
+ 
+ # make joint plot of significant factors:
+    grid.arrange(glist[[1]], glist[[7]], glist[[8]], ncol=3) 
+```
+
+#### Connections to clinical covariates
+Code for comparing the MOFA prediction with clinical markers used for treatment decisions can be found [here](https://github.com/PMBio/MOFA_CLL/tree/master/CLL_Analysis/survival)
+
+
+## Imputation
+Imputation of missing values in MOFA is done via the imputeMissing function, the imputations are stored in the imputedData slot of the MOFAobject
+```{r imputation}
+MOFAobject <- imputeMissing(MOFAobject)
+```
+
+The code for the benchmarking of the imputation performance by masking varying amount of values or entire assays at random can be found [here](https://github.com/PMBio/MOFA_CLL/tree/master/CLL_Analysis/imputation).
+
+
+# SessionInfo
+```{r sessionInfo}
+sessionInfo()
+```
+
