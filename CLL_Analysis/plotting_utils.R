@@ -1,5 +1,78 @@
 # contains helper functions for plots in the CLL analysis
 
+plotDrugWeights <- function(model, factor, ntop=10, broad_categories=FALSE){
+  
+  data("drugs", package="pace")
+
+  dfDrugs <- as.data.frame(getWeights(model, "Drugs",factor))
+  colnames(dfDrugs) <- "loadings"
+  
+  #scale loadings
+  dfDrugs$loadings <- dfDrugs$loadings/max(abs(dfDrugs$loadings))
+
+  # get concentration, drug and target category
+  dfDrugs$drug <- substr(rownames(dfDrugs),1,nchar(rownames(dfDrugs))-2)
+  dfDrugs$conc <- substr(rownames(dfDrugs),nchar(rownames(dfDrugs)),nchar(rownames(dfDrugs)))
+  dfDrugs$drugid <- rownames(drugs)[match(dfDrugs$drug, drugs[,"name"])]
+  dfDrugs %<>% mutate(abs_loadings = abs(loadings))
+  dfDrugs %<>% mutate(target_category = drugs[drugid,"target_category"])
+  dfDrugs %<>% mutate(pathway = drugs[drugid,"pathway"])
+  dfDrugs %<>% mutate(main_targets = drugs[drugid,"main_targets"])
+  
+  # take average across concentrations
+dfDrugsAv <- dfDrugs %>% group_by(drug) %>% 
+  dplyr::summarise(meanloadings = mean(loadings),
+            target_category=unique(target_category),
+            main_targets=unique(main_targets),
+            pathway=unique(pathway))
+dfDrugsAv$absMeanloading <- abs(dfDrugsAv$meanloadings)
+
+# make broader target categories     
+if(broad_categories){
+dfDrugsAv %<>% mutate(main_targets2 = ifelse(grepl("CHK",main_targets),
+                                             "CHK", main_targets))
+dfDrugsAv %<>% mutate(main_targets2 = ifelse(grepl("PI3K|SYK|BTK",main_targets2),
+                                             "BCR pathway", main_targets2))
+dfDrugsAv %<>% mutate(main_targets2 = ifelse(grepl("AKT|LYN|SRC",main_targets2),
+                                             "BCR pathway", main_targets2))
+dfDrugsAv %<>% mutate(main_targets2 = ifelse(!main_targets2 %in% c("BCR pathway", "CHK", "HSP90"),
+                                             "other", main_targets2))
+# define colors
+cols <- RColorBrewer::brewer.pal(10,"Paired")[c(1,3,9)]
+names(cols) <-  c("BCR pathway", "CHK" , "HSP90")
+col4Categories <- c(other="gray",cols)
+
+} else dfDrugsAv$main_targets2 <- dfDrugsAv$target_category
+
+
+
+
+# Sort according to loadings
+dfDrugsAv <- dfDrugsAv[order(dfDrugsAv$absMeanloading, decreasing = T)[1:ntop],]
+dfDrugsAv$drug <- factor(dfDrugsAv$drug, levels=rev(dfDrugsAv$drug))
+
+# Make plot
+gg <- ggplot(dfDrugsAv,aes(x=drug, y=absMeanloading, col= main_targets2)) +
+    geom_point(size=3) +
+    geom_segment(aes(xend=drug, yend=0), size=2) +
+    coord_flip() +
+    theme(
+      axis.title.x = element_text(size=rel(1.3), color='black'),
+      axis.title.y = element_blank(),
+      axis.text.y = element_text(size=rel(1.5), hjust=1, color='black'),
+      axis.text.x = element_text(size=rel(1.5), color='black'),
+      axis.ticks.y = element_blank(),
+      axis.ticks.x = element_line(),
+      legend.position='right',
+      legend.title=element_text(size=rel(1.3), color="black"),
+      legend.text=element_text(size=rel(1.3), color="black"),
+      legend.key=element_rect(fill='transparent'),
+      panel.background = element_blank()
+    ) + ylab(paste0("Absolute loading on factor ",factor)) +
+  guides(color=guide_legend(title="Categories", ncol=1, title.position="top"))
+  if(broad_categories) gg <- gg +scale_color_manual(values=col4Categories)
+  gg
+}
 
 get_legend<-function(gg){
   tmp <- ggplot_gtable(ggplot_build(gg))
@@ -107,7 +180,7 @@ plotDrugResponseCurve <- function(model, drugnm, groups=NULL, groupnm=""){
   return(p)
 }
 
-plotFlippedR2 <- function(r2.out, orderFactorsbyR2= TRUE, showtotalR2 = TRUE, horizontalSpaces = TRUE){
+plotFlippedR2 <- function(model, r2.out, orderFactorsbyR2= TRUE, showtotalR2 = TRUE, horizontalSpaces = TRUE){
   
   fvar_mk <- r2out$R2PerFactor
   fvar_m <- r2out$R2Total
