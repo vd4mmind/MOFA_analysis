@@ -16,10 +16,10 @@ Multi-omic studies promise the improved characterization of biological processes
 Content
 -------
 * `/CLL_Analysis/`: contains all scripts analysing the MOFA model on the CLL data.
-    *  vignette_CLL.Rmd [Rmd](CLL_Analysis/vignette_CLL.Rmd) [html](http://htmlpreview.github.com/?https://github.com/PMBio/MOFA_CLL/blob/master/CLL_Analysis/vignette_CLL.html) (contains all relevant analysis step from model training to the figures shown in the manuscript on the CLL data)
+    *  vignette_CLL.Rmd [Rmd](CLL_Analysis/vignette_CLL.Rmd)  (contains all relevant analysis step from model training to the figures shown in the manuscript on the CLL data)
 
 * `/scMT_Analysis/`: contains all scripts analysing the MOFA model on the scMT data.
-     * mofa_scMT.Rmd  [Rmd](scMT_Analysis/mofa_scMT.Rmd) (contains code for Figure 5 and all supplementary figures related to the scMT data)
+     * mofa_scMT.Rmd  [Rmd](scMT_analysis/mofa_scMT.Rmd) (contains code for Figure 5 and all supplementary figures related to the scMT data)
 
 * `/model_validation/`: simulations for model validation
     * `/learnK/`: estimating the true number of factors under different dimensionality settings
